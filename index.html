@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<!-- ===================================================================
+  케미칼 뉴스 인사이트 - 화면 (index.html)
+  - GitHub Pages에 올리는 단일 파일입니다.
+  - 아래 스크립트의 API_URL 에 Apps Script 웹앱 주소를 넣으면 구글시트 데이터가 표시됩니다.
+  - API_URL 이 비어 있는 동안에는 '샘플 모드'로 내장 샘플 기사 4건이 표시됩니다.
+==================================================================== -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>케미칼 뉴스 인사이트</title>
+<!-- 글꼴: 본문·제목은 명조(Noto Serif KR), 작은 안내 글자는 고딕(Noto Sans KR) -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700;900&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* ---------- 기본 색과 글꼴 ---------- */
+:root{--paper:#F3F0E8;--field:#FBF9F4;--ink:#1A1A1A;--mute:#5A5750;--rule:#CFC9BC;--line:#8A857A;--up:#B4410B;--down:#1D5FA8;--flat:#4A4740;--sans:'Noto Sans KR',system-ui,sans-serif;--serif:'Noto Serif KR','Nanum Myeongjo',serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);font-size:15px;line-height:1.6}
+a{color:inherit}
+button{font-family:inherit;cursor:pointer}
+button:disabled{opacity:.35;cursor:not-allowed}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.wrap{max-width:1360px;margin:0 auto;padding:0 32px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* ---------- 맨 위 띠: 샘플 안내, 검색, 등록 버튼 ---------- */
+.strip{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;padding:8px 0;border-bottom:1px solid var(--ink);font-family:var(--sans);font-size:12.5px}
+.strip .note{color:var(--mute)}
+.strip .right{margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.search{position:relative;display:block;width:260px;max-width:100%}
+.search svg{position:absolute;left:10px;top:14px}
+.search input{width:100%;height:44px;padding:0 10px 0 34px;border:1px solid var(--ink);border-radius:0;background:var(--field);color:var(--ink);font:inherit;font-size:13.5px}
+.btn-solid{height:44px;padding:0 18px;display:inline-flex;align-items:center;gap:8px;background:var(--ink);color:var(--paper);font-family:var(--sans);font-weight:700;font-size:13.5px;text-decoration:none;border:none}
+.btn-line{min-height:44px;padding:0 18px;display:inline-flex;align-items:center;gap:8px;background:var(--paper);color:var(--ink);font-family:var(--sans);font-weight:700;font-size:13.5px;text-decoration:none;border:1px solid var(--ink)}
+
+/* ---------- 제호 ---------- */
+.masthead{text-align:center;padding:22px 0 16px;border-bottom:3px double var(--ink)}
+.masthead .eyebrow{font-family:var(--sans);font-size:11px;font-weight:500;letter-spacing:.32em;color:var(--mute)}
+.masthead h1{margin:8px 0 6px;font-size:clamp(34px,6vw,66px);font-weight:900;letter-spacing:-.02em;line-height:1.15}
+.masthead h1 a{text-decoration:none}
+.masthead .sub{font-family:var(--sans);font-size:13px;color:var(--mute)}
+
+/* ---------- 날짜 이동 줄 ---------- */
+.datebar{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:4px 16px;padding:10px 0;border-bottom:1px solid var(--rule);font-family:var(--sans)}
+.datebar button,.datebar .pill{min-height:44px;padding:0 14px;border:1px solid var(--ink);background:var(--paper);color:var(--ink);font:inherit;font-size:13.5px;font-weight:700}
+.datecenter{text-align:center;min-width:250px}
+.datetitle{font-family:var(--serif);font-size:22px;font-weight:900;letter-spacing:-.01em}
+.datenote{font-size:12.5px;color:var(--mute)}
+.datetools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:12px}
+.datetools label{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--mute)}
+.datetools input{height:44px;padding:0 10px;border:1px solid var(--ink);border-radius:0;background:var(--field);color:var(--ink);font:inherit;font-size:13.5px}
+
+/* ---------- 품목·가격영향 메뉴 ---------- */
+.nav{display:flex;flex-wrap:wrap;align-items:center;gap:0 4px;border-bottom:1px solid var(--ink)}
+.navbtn{min-height:44px;margin-bottom:-1px;padding:0 16px;background:none;border:none;border-bottom:3px solid transparent;font-family:var(--sans);font-size:14.5px;font-weight:500;color:var(--mute)}
+.navbtn.on{border-bottom-color:var(--ink);font-weight:700;color:var(--ink)}
+.navbtn small{font-size:12px;font-weight:400;color:var(--mute)}
+.navright{margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:0 2px}
+.navright .navbtn{padding:0 10px;font-size:13px}
+.navlabel{font-family:var(--sans);font-size:12px;color:var(--mute);margin-right:6px}
+
+/* ---------- 1면 ---------- */
+main{padding:30px 0 56px}
+.front{display:flex;flex-wrap:wrap;align-items:flex-start;gap:32px 0}
+.lead{flex:2 1 560px;min-width:0;padding-right:36px}
+.lead.ruled{border-right:1px solid var(--rule)}
+.side{flex:1 1 320px;min-width:0;padding-left:36px}
+.kicker{font-family:var(--sans);font-size:12px;font-weight:700;letter-spacing:.1em}
+.hl{margin:10px 0 0;font-weight:700;line-height:1.4;letter-spacing:-.01em}
+.hl a{text-decoration:none}
+.hl a:hover{text-decoration:underline}
+.lead .hl{margin-top:12px;font-size:clamp(28px,3.4vw,44px);font-weight:900;line-height:1.32;letter-spacing:-.02em}
+.side .hl{font-size:23px}
+.rest .hl{font-size:20px;line-height:1.45}
+.en{margin:10px 0 0;font-style:italic;font-size:15px;color:var(--mute)}
+.deck{margin:10px 0 0;font-size:15px;line-height:1.75;color:#2C2A26;text-wrap:pretty}
+.lead .deck{margin-top:18px;font-size:18px;line-height:1.8}
+.rest .deck{font-size:14.5px}
+.points{list-style:none;margin:22px 0 0;padding:0;border-top:1px solid var(--ink)}
+.points li{display:flex;align-items:baseline;gap:14px;padding:12px 0;border-bottom:1px solid var(--rule)}
+.points b{flex:none;width:20px;font-weight:900;font-size:18px}
+.points span{font-size:15.5px;line-height:1.75}
+.meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;margin-top:12px;font-family:var(--sans);font-size:12.5px;color:var(--mute)}
+.imp{font-weight:700}
+.imp.up{color:var(--up)}
+.imp.down{color:var(--down)}
+.imp.flat{color:var(--flat)}
+.read{margin-left:auto;min-height:44px;display:inline-flex;align-items:center;font-weight:700;font-size:13.5px;color:var(--ink)}
+.sidestory{padding:0 0 22px;margin-bottom:22px;border-bottom:1px solid var(--rule)}
+.rest{margin-top:36px;padding-top:26px;border-top:3px double var(--ink);display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:32px}
+
+/* ---------- 기사 화면 ---------- */
+.back{display:inline-flex;align-items:center;min-height:44px;font-family:var(--sans);font-size:13.5px;font-weight:700;text-decoration:none}
+.art-wrap{display:flex;flex-wrap:wrap;align-items:flex-start;gap:36px 0;margin-top:6px}
+.article{flex:999 1 560px;min-width:0;padding-right:40px;border-right:1px solid var(--rule)}
+.article h2{margin:12px 0 0;font-size:clamp(28px,3.6vw,46px);font-weight:900;line-height:1.3;letter-spacing:-.02em;text-wrap:balance}
+.byline{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;margin-top:18px;padding:12px 0;border-top:1px solid var(--ink);border-bottom:1px solid var(--rule);font-family:var(--sans);font-size:13px;color:var(--mute)}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;border-bottom:1px solid var(--ink)}
+.tab{min-height:44px;margin-bottom:-1px;padding:0 18px;background:none;border:none;border-bottom:3px solid transparent;font-family:var(--sans);font-size:14.5px;font-weight:500;color:var(--mute)}
+.tab.on{border-bottom-color:var(--ink);font-weight:700;color:var(--ink)}
+.tabbody{padding-top:28px}
+.label{font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:.16em;color:var(--mute)}
+.pull{margin:10px 0 34px;font-size:clamp(21px,2.2vw,27px);font-weight:700;line-height:1.65;text-wrap:pretty}
+.bigpoints{list-style:none;margin:0;padding:0}
+.bigpoints li{display:flex;align-items:baseline;gap:18px;padding:16px 0;border-bottom:1px solid var(--rule)}
+.bigpoints b{flex:none;width:28px;font-size:28px;font-weight:900;line-height:1}
+.bigpoints span{font-size:16.5px;line-height:1.8}
+.cols{columns:2 300px;column-gap:44px;column-rule:1px solid var(--rule)}
+.cols p{margin:0 0 1.1em;font-size:16px;line-height:2;text-align:justify;word-break:keep-all}
+.pairhead,.pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:32px}
+.pairhead{padding-bottom:8px;border-bottom:1px solid var(--ink)}
+.pair{padding:20px 0;border-bottom:1px solid var(--rule)}
+.pair p{margin:0;font-size:15.5px;line-height:1.95;word-break:keep-all}
+.pair p.eng{font-size:14.5px;line-height:1.85;color:#3A3832;word-break:normal}
+.prevnext{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:16px;margin-top:36px}
+.prevnext a{display:block;padding:14px 16px;border:1px solid var(--rule);text-decoration:none;font-size:15px;font-weight:700;line-height:1.5}
+.prevnext a small{display:block;font-family:var(--sans);font-size:11.5px;font-weight:700;letter-spacing:.1em;color:var(--mute);margin-bottom:4px}
+.prevnext a.next{text-align:right}
+.foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px 20px;margin-top:36px;padding-top:18px;border-top:3px double var(--ink)}
+.foot span{font-family:var(--sans);font-size:12.5px;color:var(--mute)}
+.rail{flex:1 1 260px;min-width:0;padding-left:32px}
+.rail .item{padding:16px 0;border-bottom:1px solid var(--rule)}
+.rail .item a{display:block;margin-top:6px;font-size:17px;font-weight:700;line-height:1.5;text-decoration:none}
+.rail .item a:hover{text-decoration:underline}
+
+/* ---------- 등록 화면 ---------- */
+.formwrap{max-width:900px}
+.formwrap h2{margin:0;font-size:26px;font-weight:900;letter-spacing:-.01em}
+.formwrap .lede{margin:6px 0 24px;font-family:var(--sans);color:var(--mute)}
+.box{padding:22px;border:1px solid var(--ink);background:var(--field);margin-bottom:28px}
+.box h3{margin:0 0 6px;font-size:17px;font-weight:700}
+.box p{margin:0 0 14px;font-family:var(--sans);font-size:13.5px;color:var(--mute)}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:20px}
+.fld{margin-bottom:22px}
+.fld>label,.fld>.lab{display:block;margin-bottom:6px;font-family:var(--sans);font-size:13px;font-weight:700}
+.inp{width:100%;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:0;background:var(--field);color:var(--ink);font-family:var(--sans);font-size:14px}
+textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
+.hint{margin-top:6px;font-family:var(--sans);font-size:12.5px;color:var(--mute)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{min-height:44px;min-width:64px;padding:0 16px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;font-weight:500}
+.chip.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line)}
+.seg button{min-height:44px;padding:0 16px;border:none;background:var(--field);color:var(--ink);font-family:var(--sans);font-size:14px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--ink);color:var(--paper);font-weight:700}
+.msg{margin:0 0 18px;padding:12px 14px;border:1px solid;font-family:var(--sans);font-size:13.5px;line-height:1.6}
+.msg.ok{border-color:#2F5D3A;background:#EAF2EA;color:#1F4029}
+.msg.warn{border-color:#8A5A00;background:#FFF4D6;color:#5C4400}
+.msg.err{border-color:#9B2C2C;background:#F9E7E4;color:#7A1F1F}
+.msg.info{border-color:var(--line);background:var(--field);color:var(--ink)}
+.msg a{font-weight:700}
+.msg button{margin-left:8px;min-height:36px;padding:0 12px;border:1px solid currentColor;background:transparent;color:inherit;font:inherit;font-weight:700}
+.empty{padding:80px 0;text-align:center;color:var(--mute);font-family:var(--sans)}
+.empty strong{display:block;margin-bottom:10px;font-family:var(--serif);font-size:24px;color:var(--ink)}
+.empty .btn-solid{margin-top:22px}
+.loading{padding:80px 0;text-align:center;color:var(--mute);font-family:var(--sans)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- 맨 위 띠: 샘플 모드 안내 / 검색 / 등록 -->
+  <div class="strip">
+    <span class="note" id="modeNote"></span>
+    <span class="right">
+      <label class="search">
+        <span class="sr">뉴스 검색</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5A5750" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input type="search" id="q" placeholder="전체 기간 검색 (두 글자 이상)" autocomplete="off">
+      </label>
+      <a class="btn-solid" href="#/write">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F3F0E8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        새 뉴스 등록
+      </a>
+    </span>
+  </div>
+  <!-- 제호 -->
+  <header class="masthead">
+    <div class="eyebrow">PETROCHEMICAL NEWS DIGEST</div>
+    <h1><a href="#/">케미칼 뉴스 인사이트</a></h1>
+    <div class="sub">영문 시황 뉴스를 번역하고 요약해 전합니다</div>
+  </header>
+  <!-- 아래 세 영역은 스크립트가 상황에 맞게 채웁니다 -->
+  <div id="dateBar"></div>
+  <nav id="nav" aria-label="품목과 가격 영향"></nav>
+  <main id="main"></main>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // =====================================================================
+  // 1. 설정
+  // =====================================================================
+  // Apps Script 웹앱 배포 주소를 여기에 붙여넣으세요. (예: https://script.google.com/macros/s/.../exec)
+  const API_URL = 'PASTE_YOUR_WEB_APP_URL_HERE';
+  // 주소를 아직 넣지 않았으면 샘플 모드로 동작합니다.
+  const DEMO = API_URL.indexOf('PASTE_') === 0;
+  // 브라우저 저장소(localStorage)에서 쓰는 이름 앞부분
+  const STORE = 'newsapp:';
+  // 품목 태그 목록
+  const TAGS = ['SM', 'AN', 'BD', 'MMA', 'BPA', '기타'];
+  // 가격영향 표시 정보 (색뿐 아니라 화살표 글자로도 구분)
+  const IMPACT = {
+    '상승': { label: '상승 요인', arrow: '▲', cls: 'up' },
+    '하락': { label: '하락 요인', arrow: '▼', cls: 'down' },
+    '중립': { label: '중립', arrow: '–', cls: 'flat' }
+  };
+  // 중요도 정렬 순서 (낮을수록 먼저)
+  const RANK = { '높음': 0, '보통': 1, '낮음': 2 };
+  // 지난 날짜 한 판을 브라우저에 보관하는 시간 (7일)
+  const TTL_PAST = 7 * 24 * 3600 * 1000;
+  // 오늘·최신 날짜 한 판을 '신선한 것'으로 보는 시간 (3분)
+  const TTL_FRESH = 3 * 60 * 1000;
+
+  // Claude에게 보낼 번역·요약 요청문 (결과를 등록 화면에 한 번에 붙여넣을 수 있는 형식)
+  const PROMPT = [
+    '아래 영어 석유화학 뉴스를 한국어로 번역하고 요약해 주세요. 반드시 아래 형식으로만 출력하세요.',
+    '대괄호 제목 줄은 그대로 쓰고, 내용은 그 아래 줄에 적습니다.',
+    '',
+    '[한글제목]',
+    '(자연스러운 한국어 제목)',
+    '[한줄요약]',
+    '(한 문장, 90자 이내)',
+    '[핵심포인트]',
+    '- (3~4개, 각각 한 문장)',
+    '[전문해석]',
+    '(전문 번역. 원문 문단 구분을 그대로 따라 문단 사이에 빈 줄을 둠)',
+    '[가격영향]',
+    '(상승, 하락, 중립 중 하나. 해당 품목 가격 방향에 미치는 영향 기준)',
+    '[중요도]',
+    '(높음, 보통, 낮음 중 하나)',
+    '[품목]',
+    '(SM, AN, BD, MMA, BPA, 기타 중 해당하는 것을 쉼표로 구분)',
+    '',
+    '규칙: 수치, 단위, 고유명사, 회사명은 원문 그대로 유지하고 원문에 없는 내용은 추가하지 마세요.',
+    '',
+    '[기사 원문]',
+    '(여기에 영어 원문 붙여넣기)'
+  ].join('\n');
+
+  // =====================================================================
+  // 2. 샘플 모드용 내장 데이터 (API_URL 이 비어 있을 때만 사용)
+  // =====================================================================
+  const DEMO_LIST = [
+    {
+      id: '20261101-001', date: '2026-11-01', source: '샘플', tags: ['SM'], impact: '상승', importance: '높음', url: '',
+      titleKo: '아시아 SM 현물, 단기 물량 부족에 소폭 강세',
+      titleEn: 'Asia styrene spot edges higher on tight prompt supply',
+      oneLine: '단기 인도 물량이 빠듯한 가운데 아시아 SM 현물이 소폭 오르며, 월말 수요를 채우려는 바이어들의 스팟 문의가 이어졌다.',
+      points: ['단기 인도 가능 물량이 제한적이어서 현물 가격이 지지됐다.', '일부 지역 생산업체가 정기보수로 가동을 낮춘 것으로 전해졌다.', '향후 방향은 원료 벤젠·에틸렌 흐름과 하방 수요 회복 속도에 달렸다는 시각이다.'],
+      paragraphsKo: ['시장 관계자들에 따르면 단기 인도 가능한 물량이 계속 제한되면서 이번 주 아시아 스티렌모노머(SM) 현물 가격이 소폭 상승했다.', '역내 여러 생산업체가 정기보수로 가동률을 낮춘 것으로 전해졌고, 바이어들은 월말 수요를 충당하기 위해 추가 현물 물량을 찾았다.', '참여자들은 단기 방향이 원료인 벤젠·에틸렌의 움직임과 하방 수요 회복 속도에 좌우될 것이라고 말했다.'],
+      paragraphsEn: ['Spot styrene monomer values in Asia edged higher this week as prompt cargo availability stayed limited, market sources said.', 'Several regional producers were reported to be running at reduced rates for maintenance, while buyers sought additional spot cargoes to cover end-of-month needs.', 'Participants said the near-term direction would depend on movements in feedstock benzene and ethylene and on the pace of downstream demand recovery.']
+    },
+    {
+      id: '20261101-002', date: '2026-11-01', source: '샘플', tags: ['SM', 'AN'], impact: '중립', importance: '보통', url: '',
+      titleKo: 'ABS 제조사, SM·AN 구매 계획 보류하며 관망',
+      titleEn: 'ABS makers hold off on styrene and acrylonitrile purchase plans',
+      oneLine: 'ABS 제조사들이 SM·AN 구매 계획을 보류하면서 시장 전반이 관망 분위기를 보였다.',
+      points: ['ABS 하방 수요 회복이 확인되지 않아 구매가 보류됐다.', 'SM과 AN 모두 신규 문의가 제한적이었다.', '연말 재고 수준을 점검한 뒤 구매 재개 여부를 정할 것이라는 전언이다.'],
+      paragraphsKo: ['시장 관계자들에 따르면 ABS 하방 수요 회복이 확인되지 않으면서 ABS 제조사들은 스티렌모노머(SM)와 아크릴로니트릴(AN) 구매 계획을 보류했다.', '이번 주 두 원료 모두 신규 문의는 제한적이었다.', '바이어들은 연말 재고 수준을 점검한 뒤 구매를 재개할지 결정할 것이라고 전해졌다.'],
+      paragraphsEn: ['ABS producers held off on purchasing plans for styrene and acrylonitrile as downstream recovery remained unconfirmed, market sources said.', 'New inquiries for both feedstocks were limited during the week.', 'Buyers were said to be reviewing year-end inventory levels before deciding whether to resume purchases.']
+    },
+    {
+      id: '20261031-001', date: '2026-10-31', source: '샘플', tags: ['AN'], impact: '하락', importance: '보통', url: '',
+      titleKo: '중국 AN 가동률 회복, 아시아 현물에 하방 압력',
+      titleEn: 'China acrylonitrile run rates recover, weighing on Asian spot',
+      oneLine: '중국 AN 설비 가동이 정상화되면서 아시아 현물 공급 우려가 완화되고 가격에 하방 압력이 커졌다.',
+      points: ['중국 내 AN 설비 가동이 점차 회복세를 보였다.', '수입 수요가 약해지며 역외 공급사의 오퍼 경쟁이 커졌다.', '하방 산업(ABS·아크릴 섬유) 수요가 뚜렷하게 개선되지 않아 반등 폭이 제한됐다.'],
+      paragraphsKo: ['지난 한 주 동안 중국 내 아크릴로니트릴(AN) 설비 가동률이 회복되면서 역내 공급 우려가 누그러졌다.', '국내 물량 여건이 나아지자 수입 수요가 약해졌고, 역외 판매사들은 제한된 수요를 두고 더 적극적으로 경쟁했다.', '트레이더들은 ABS·아크릴 섬유 업체의 하방 수요가 뚜렷하게 살아나는 조짐이 없어 단기 반등이 제한될 것이라고 전했다.'],
+      paragraphsEn: ['Operating rates at acrylonitrile plants in China recovered over the past week, easing concerns over regional supply.', 'Import interest softened as domestic availability improved, and offshore sellers competed more aggressively for limited demand.', 'Downstream demand from ABS and acrylic fibre producers showed little sign of a clear pickup, capping any near-term rebound, traders said.']
+    },
+    {
+      id: '20261030-001', date: '2026-10-30', source: '샘플', tags: ['MMA'], impact: '하락', importance: '낮음', url: '',
+      titleKo: '아시아 MMA 수요 부진 지속, 재고 누적',
+      titleEn: 'Asian MMA demand stays soft as inventories build',
+      oneLine: '하방 수요가 약한 가운데 재고가 쌓이면서 아시아 MMA 가격에 하방 압력이 이어졌다.',
+      points: ['아크릴 시트 등 하방 수요가 완만한 수준에 머물렀다.', '일부 생산·유통 업체의 재고가 늘어난 것으로 전해졌다.', '공급사들은 판매 확대를 위해 가격 유연성을 보였다.'],
+      paragraphsKo: ['아시아 메틸메타크릴레이트(MMA) 수요는 부진한 흐름을 이어갔고, 하방 아크릴 시트 업체들은 당장 필요한 물량 위주로만 구매했다.', '일부 생산업체와 유통업체의 재고가 늘어난 것으로 전해졌다.', '시장 참여자들에 따르면 판매사들은 물량을 소화하기 위해 가격 면에서 더 유연한 모습을 보였다.'],
+      paragraphsEn: ['Demand for methyl methacrylate in Asia stayed soft, with downstream acrylic sheet producers limiting purchases to immediate needs.', 'Inventories were reported to have built at some producers and distributors.', 'Sellers showed more flexibility on pricing in an effort to move volumes, according to market participants.']
+    }
+  ];
+
+  // 샘플 모드의 GET 요청 처리 (Apps Script 응답과 같은 모양으로 돌려줌)
+  function demoGet(p) {
+    // 가벼운 정보만 남기는 함수 (본문 제거)
+    const light = function (a) { const c = Object.assign({}, a); delete c.paragraphsKo; delete c.paragraphsEn; return c; };
+    if (p.action === 'dates') {
+      // 날짜별 건수 집계
+      const counts = {};
+      DEMO_LIST.forEach(function (a) { counts[a.date] = (counts[a.date] || 0) + 1; });
+      const dates = Object.keys(counts).sort().map(function (d) { return { date: d, count: counts[d] }; });
+      return Promise.resolve({ ok: true, dates: dates, latest: dates.length ? dates[dates.length - 1].date : null });
+    }
+    if (p.action === 'edition') {
+      return Promise.resolve({ ok: true, date: p.date, articles: DEMO_LIST.filter(function (a) { return a.date === p.date; }).map(light) });
+    }
+    if (p.action === 'article') {
+      const hit = DEMO_LIST.find(function (a) { return a.id === p.id; });
+      return Promise.resolve(hit ? { ok: true, article: hit } : { ok: false, code: 'NOT_FOUND', message: '기사를 찾을 수 없습니다.' });
+    }
+    if (p.action === 'search') {
+      const w = String(p.q || '').trim().toLowerCase();
+      if (w.length < 2) return Promise.resolve({ ok: false, code: 'SHORT_QUERY', message: '검색어는 두 글자 이상 입력하세요.' });
+      const found = DEMO_LIST.filter(function (a) { return (a.titleKo + ' ' + a.titleEn + ' ' + a.oneLine + ' ' + a.points.join(' ')).toLowerCase().indexOf(w) >= 0; });
+      return Promise.resolve({ ok: true, q: w, articles: found.map(light) });
+    }
+    return Promise.resolve({ ok: false, code: 'BAD_ACTION', message: '알 수 없는 요청입니다.' });
+  }
+
+  // =====================================================================
+  // 3. 도구 함수
+  // =====================================================================
+  // 요소 하나 찾기
+  const $ = function (sel) { return document.querySelector(sel); };
+  // 화면에 넣을 글자의 특수문자를 안전하게 바꿈 (시트 내용이 화면 코드로 해석되지 않도록)
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+  }
+  // 오늘 날짜 (한국 시간, YYYY-MM-DD)
+  function todayStr() { return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }); }
+  // 2026-11-01 -> 2026년 11월 1일 일요일
+  function dateLabel(iso) {
+    const p = iso.split('-').map(Number);
+    const d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));
+    return p[0] + '년 ' + p[1] + '월 ' + p[2] + '일 ' + ['일', '월', '화', '수', '목', '금', '토'][d.getUTCDay()] + '요일';
+  }
+  // 2026-11-01 -> 2026.11.01
+  function dots(iso) { return String(iso || '').replace(/-/g, '.'); }
+  // 가격영향 표시 정보 (알 수 없는 값도 안전하게 처리)
+  function impactOf(a) { return IMPACT[a.impact] || { label: a.impact || '미정', arrow: '–', cls: 'flat' }; }
+  // 브라우저 저장소 읽기 (오래됐으면 null)
+  function cacheRead(key, maxAge) {
+    try {
+      const raw = localStorage.getItem(STORE + key);
+      if (!raw) return null;
+      const o = JSON.parse(raw);
+      return Date.now() - o.t > maxAge ? null : o.v;
+    } catch (e) { return null; }
+  }
+  // 브라우저 저장소 쓰기
+  function cacheWrite(key, v) { try { localStorage.setItem(STORE + key, JSON.stringify({ t: Date.now(), v: v })); } catch (e) { /* 저장 공간이 없으면 무시 */ } }
+  // 브라우저 저장소 지우기
+  function cacheDel(key) { try { localStorage.removeItem(STORE + key); } catch (e) { /* 무시 */ } }
+  // 단순 값 저장/읽기 (탭 기억, 등록 키 기억 등)
+  function setPref(k, v) { try { localStorage.setItem(STORE + 'pref:' + k, v); } catch (e) { /* 무시 */ } }
+  function getPref(k) { try { return localStorage.getItem(STORE + 'pref:' + k) || ''; } catch (e) { return ''; } }
+  // 중요도 높은 순, 같으면 id 큰(나중에 등록된) 순으로 정렬
+  function sortStories(list) {
+    return list.slice().sort(function (a, b) {
+      const ra = RANK[a.importance] == null ? 9 : RANK[a.importance];
+      const rb = RANK[b.importance] == null ? 9 : RANK[b.importance];
+      return ra - rb || (a.id < b.id ? 1 : -1);
+    });
+  }
+
+  // =====================================================================
+  // 4. 서버 통신
+  // =====================================================================
+  // JSONP 읽기: 서버가 callback 이름으로 감싸서 보내 주는 방식 (fetch 가 막힐 때의 대비책)
+  function jsonp(url) {
+    return new Promise(function (resolve, reject) {
+      // 겹치지 않는 임시 함수 이름
+      const name = '__newsCb' + Date.now() + Math.floor(Math.random() * 1000);
+      // 스크립트 태그 만들기
+      const s = document.createElement('script');
+      // 정리 함수: 타이머, 임시 함수, 태그 제거
+      function cleanup() { clearTimeout(timer); delete window[name]; if (s.parentNode) s.parentNode.removeChild(s); }
+      // 15초 안에 응답이 없으면 실패 처리
+      const timer = setTimeout(function () { cleanup(); reject(new Error('시간 초과')); }, 15000);
+      // 서버가 이 함수를 호출하면서 데이터를 전달
+      window[name] = function (data) { cleanup(); resolve(data); };
+      // 불러오기 실패 처리
+      s.onerror = function () { cleanup(); reject(new Error('불러오지 못했습니다')); };
+      // 주소 뒤에 callback 이름을 붙여 요청
+      s.src = url + '&callback=' + name;
+      document.head.appendChild(s);
+    });
+  }
+  // 읽기 요청
+  async function apiGet(params) {
+    if (DEMO) return demoGet(params);
+    const url = API_URL + (API_URL.indexOf('?') >= 0 ? '&' : '?') + new URLSearchParams(params).toString();
+    let res;
+    try { res = await fetch(url, { method: 'GET', redirect: 'follow' }); }
+    catch (e) {
+      // 브라우저가 fetch 를 막는 경우(CORS)에는 스크립트 태그 방식(JSONP)으로 한 번 더 시도
+      try { return await jsonp(url); }
+      catch (e2) { throw new Error('서버에 연결할 수 없습니다. 인터넷 연결과 웹앱 주소(API_URL)를 확인하세요.'); }
+    }
+    if (!res.ok) throw new Error('서버 응답 오류 (' + res.status + ')');
+    try { return await res.json(); }
+    catch (e) { throw new Error('서버 응답을 읽을 수 없습니다. 웹앱 배포 설정(액세스: 모든 사용자)을 확인하세요.'); }
+  }
+  // 등록 요청 (본문을 글자로 보내 브라우저의 사전 확인 요청을 피함)
+  async function apiPost(body) {
+    if (DEMO) return { ok: false, code: 'DEMO', message: '샘플 모드입니다. 웹앱 배포 주소를 index.html의 API_URL에 넣으면 저장할 수 있습니다.' };
+    let res;
+    try { res = await fetch(API_URL, { method: 'POST', redirect: 'follow', body: JSON.stringify(body) }); }
+    catch (e) { return { ok: false, code: 'NETWORK', message: '서버에 연결할 수 없습니다. 인터넷 연결과 웹앱 주소(API_URL)를 확인하세요.' }; }
+    try { return await res.json(); }
+    catch (e) { return { ok: false, code: 'BAD_RESPONSE', message: '서버 응답을 읽을 수 없습니다. 저장되었는지 시트에서 확인하세요.' }; }
+  }
+
+  // =====================================================================
+  // 5. 화면 상태
+  // =====================================================================
+  const state = {
+    view: 'front',      // front(1면) / article(기사) / search(검색) / write(등록)
+    dates: [],          // 기사가 있는 날짜 목록 [{date, count}]
+    datesReady: false,  // 날짜 목록을 불러왔는지
+    date: null,         // 지금 보는 날짜
+    edition: [],        // 지금 보는 한 판의 기사 목록(가벼운 정보)
+    editionDate: null,  // edition 이 어느 날짜의 것인지
+    tag: 'ALL',         // 품목 필터
+    impact: 'ALL',      // 가격영향 필터
+    article: null,      // 열어 둔 기사(전문 포함)
+    tab: getPref('tab') || 'summary', // 마지막으로 본 탭을 기억
+    results: null,      // 검색 결과
+    query: '',          // 검색어
+    loading: false,     // 불러오는 중인지
+    error: ''           // 오류 안내문
+  };
+  // 화면 전환 중 오래된 요청의 결과가 덮어쓰지 않도록 쓰는 번호표
+  let ticket = 0;
+
+  // =====================================================================
+  // 6. 데이터 불러오기
+  // =====================================================================
+  // 날짜 목록 불러오기 (브라우저 저장본이 있으면 먼저 쓰고, 뒤에서 갱신)
+  async function ensureDates(force) {
+    if (state.datesReady && !force) return;
+    const cached = force ? null : cacheRead('dates', TTL_FRESH);
+    if (cached) { state.dates = cached; state.datesReady = true; return; }
+    const res = await apiGet({ action: 'dates' });
+    if (!res.ok) throw new Error(res.message || '날짜 목록을 불러오지 못했습니다.');
+    state.dates = res.dates; state.datesReady = true;
+    cacheWrite('dates', res.dates);
+  }
+  // 하루 한 판 불러오기
+  async function loadEdition(date, force, myTicket) {
+    const key = 'ed:' + date;
+    const isPast = date < todayStr();
+    // 지난 호는 오래 보관, 오늘 호는 일단 저장본을 보여 주고 곧바로 새로 받아 확인
+    const cached = force ? null : cacheRead(key, isPast ? TTL_PAST : 24 * 3600 * 1000);
+    if (cached) {
+      state.edition = cached; state.editionDate = date;
+      if (myTicket === ticket) render();
+      if (isPast) return;
+    }
+    const res = await apiGet({ action: 'edition', date: date });
+    if (myTicket !== ticket) return;
+    if (!res.ok) { if (!cached) throw new Error(res.message || '기사를 불러오지 못했습니다.'); return; }
+    state.edition = res.articles; state.editionDate = date;
+    cacheWrite(key, res.articles);
+  }
+  // 기사 한 건 불러오기
+  async function loadArticle(id) {
+    const cached = cacheRead('ar:' + id, TTL_PAST);
+    if (cached) return cached;
+    const res = await apiGet({ action: 'article', id: id });
+    if (!res.ok) throw new Error(res.message || '기사를 불러오지 못했습니다.');
+    cacheWrite('ar:' + id, res.article);
+    return res.article;
+  }
+
+  // =====================================================================
+  // 7. 화면 이동(주소의 # 부분으로 구분)
+  //    #/            : 최신 호 1면      #/d/2026-11-01 : 해당 날짜 1면
+  //    #/a/기사번호   : 기사            #/s/검색어     : 검색
+  //    #/write       : 등록
+  // =====================================================================
+  async function route() {
+    const my = ++ticket;
+    const parts = location.hash.replace(/^#\/?/, '').split('/');
+    state.error = '';
+    try {
+      if (parts[0] === 'write') return showWrite();
+      if (parts[0] === 'a' && parts[1]) return await showArticle(parts[1], my);
+      if (parts[0] === 's' && parts[1]) return await showSearch(decodeURIComponent(parts.slice(1).join('/')), my);
+      return await showFront(parts[0] === 'd' && parts[1] ? parts[1] : null, my);
+    } catch (e) {
+      if (my !== ticket) return;
+      state.loading = false; state.error = e.message || '불러오는 중 문제가 생겼습니다.';
+      render();
+    }
+  }
+  // 1면 보여주기
+  async function showFront(date, my) {
+    state.view = 'front'; state.loading = true;
+    if ($('#q').value) $('#q').value = '';
+    await ensureDates(false);
+    if (my !== ticket) return;
+    state.date = date || (state.dates.length ? state.dates[state.dates.length - 1].date : todayStr());
+    if (state.editionDate !== state.date) { state.edition = []; state.editionDate = null; }
+    render();
+    await loadEdition(state.date, false, my);
+    if (my !== ticket) return;
+    state.loading = false; render();
+  }
+  // 기사 보여주기
+  async function showArticle(id, my) {
+    state.view = 'article'; state.article = null; state.loading = true;
+    if ($('#q').value) $('#q').value = '';
+    render();
+    const art = await loadArticle(id);
+    if (my !== ticket) return;
+    state.article = art; state.date = art.date; render();
+    // 같은 날 기사 목록은 '이전/다음 기사'와 '다른 기사'에 쓰임
+    if (state.editionDate !== art.date) await loadEdition(art.date, false, my).catch(function () { /* 목록이 없어도 기사는 볼 수 있음 */ });
+    if (my !== ticket) return;
+    state.loading = false; render();
+    window.scrollTo(0, 0);
+  }
+  // 검색 결과 보여주기
+  async function showSearch(q, my) {
+    state.view = 'search'; state.query = q; state.results = null; state.loading = true;
+    if ($('#q').value !== q) $('#q').value = q;
+    render();
+    const res = await apiGet({ action: 'search', q: q });
+    if (my !== ticket) return;
+    if (!res.ok) throw new Error(res.message || '검색하지 못했습니다.');
+    state.results = res.articles; state.loading = false; render();
+  }
+  // 등록 화면 보여주기
+  function showWrite() {
+    state.view = 'write'; state.loading = false;
+    if ($('#q').value) $('#q').value = '';
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  // =====================================================================
+  // 8. 화면 그리기
+  // =====================================================================
+  function render() {
+    $('#modeNote').textContent = DEMO ? '※ 샘플 모드: API_URL 을 설정하면 구글시트 데이터가 표시됩니다' : '';
+    renderDateBar(); renderNav();
+    const main = $('#main');
+    if (state.error) { main.innerHTML = '<div class="msg err">' + esc(state.error) + '</div>'; return; }
+    if (state.view === 'front') main.innerHTML = frontHtml();
+    else if (state.view === 'article') main.innerHTML = articleHtml();
+    else if (state.view === 'search') main.innerHTML = searchHtml();
+    else if (state.view === 'write') main.innerHTML = writeHtml();
+  }
+
+  // ---------- 날짜 이동 줄 ----------
+  function renderDateBar() {
+    const el = $('#dateBar');
+    if (state.view !== 'front' || !state.date) { el.innerHTML = ''; return; }
+    const ds = state.dates.map(function (d) { return d.date; });
+    const prev = ds.filter(function (d) { return d < state.date; }).pop();
+    const next = ds.find(function (d) { return d > state.date; });
+    const latest = ds[ds.length - 1];
+    const ready = state.editionDate === state.date;
+    const note = ready ? state.edition.length + '건' + (state.date === latest ? ' · 최신 호' : '') : '불러오는 중…';
+    el.innerHTML = '<div class="datebar" role="group" aria-label="호 선택">' +
+      '<button type="button" data-act="prev"' + (prev ? '' : ' disabled') + '>← 이전 호</button>' +
+      '<div class="datecenter"><div class="datetitle">' + dateLabel(state.date) + '</div><div class="datenote">' + note + '</div></div>' +
+      '<button type="button" data-act="next"' + (next ? '' : ' disabled') + '>다음 호 →</button>' +
+      '<span class="datetools"><label>날짜 선택 <input type="date" id="pickDate" value="' + state.date + '"' + (ds.length ? ' min="' + ds[0] + '" max="' + latest + '"' : '') + '></label>' +
+      '<button type="button" data-act="latest">최신 호</button><button type="button" data-act="refresh">↻ 새로고침</button></span></div>';
+  }
+
+  // ---------- 품목·가격영향 메뉴 ----------
+  function renderNav() {
+    const el = $('#nav');
+    if (state.view !== 'front' || !state.date) { el.innerHTML = ''; return; }
+    const base = state.editionDate === state.date ? state.edition : [];
+    const tagBtns = ['ALL'].concat(TAGS).map(function (k) {
+      const n = k === 'ALL' ? base.length : base.filter(function (a) { return a.tags.indexOf(k) >= 0; }).length;
+      return '<button type="button" class="navbtn' + (state.tag === k ? ' on' : '') + '" data-act="tag" data-v="' + k + '" aria-pressed="' + (state.tag === k) + '">' + (k === 'ALL' ? '전체' : k) + ' <small>' + n + '</small></button>';
+    }).join('');
+    const impBtns = [['ALL', '전체'], ['상승', '상승 요인'], ['하락', '하락 요인'], ['중립', '중립']].map(function (p) {
+      return '<button type="button" class="navbtn' + (state.impact === p[0] ? ' on' : '') + '" data-act="impact" data-v="' + p[0] + '" aria-pressed="' + (state.impact === p[0]) + '">' + p[1] + '</button>';
+    }).join('');
+    el.innerHTML = '<div class="nav">' + tagBtns + '<span class="navright"><span class="navlabel">가격 영향</span>' + impBtns + '</span></div>';
+  }
+
+  // ---------- 공통 조각 ----------
+  function kickerHtml(a, withDate) { return '<div class="kicker">' + esc(a.tags.join(' · ')) + (withDate ? '&nbsp;&nbsp;&nbsp;' + dots(a.date) : '') + '</div>'; }
+  function metaHtml(a, withSource) {
+    const m = impactOf(a);
+    return '<div class="meta">' + (withSource ? '<span>' + esc(a.source) + '</span>' : '') + '<span class="imp ' + m.cls + '">' + m.arrow + ' ' + m.label + '</span><span>중요도 ' + esc(a.importance) + '</span></div>';
+  }
+  function linkHtml(a) { return '<a href="#/a/' + encodeURIComponent(a.id) + '">' + esc(a.titleKo) + '</a>'; }
+  function emptyHtml(title, desc, extra) { return '<div class="empty"><strong>' + esc(title) + '</strong>' + esc(desc) + (extra || '') + '</div>'; }
+
+  // ---------- 1면 ----------
+  function frontHtml() {
+    if (state.loading && state.editionDate !== state.date) return '<div class="loading">불러오는 중…</div>';
+    if (state.datesReady && !state.dates.length) return emptyHtml('아직 등록된 기사가 없습니다', '새 뉴스 등록 화면에서 첫 기사를 저장해 보세요.', '<br><a class="btn-solid" href="#/write">새 뉴스 등록</a>');
+    const list = sortStories(state.edition.filter(function (a) {
+      return (state.tag === 'ALL' || a.tags.indexOf(state.tag) >= 0) && (state.impact === 'ALL' || a.impact === state.impact);
+    }));
+    if (!list.length) {
+      if (state.edition.length === 0) {
+        const earlier = state.dates.map(function (d) { return d.date; }).filter(function (d) { return d < state.date; }).pop();
+        return emptyHtml('이날은 수집된 기사가 없습니다', '주말이나 휴일에는 기사가 없을 수 있습니다.', earlier ? '<br><a class="btn-solid" href="#/d/' + earlier + '">' + dots(earlier) + ' 호 보기</a>' : '');
+      }
+      return emptyHtml('조건에 맞는 기사가 없습니다', '품목이나 가격 영향 필터를 바꿔 보세요.');
+    }
+    const lead = list[0], side = list.slice(1, 3), rest = list.slice(3);
+    let h = '<div class="front"><article class="lead' + (side.length ? ' ruled' : '') + '">' + kickerHtml(lead, true) +
+      '<h2 class="hl">' + linkHtml(lead) + '</h2>' + (lead.titleEn ? '<p class="en">' + esc(lead.titleEn) + '</p>' : '') +
+      '<p class="deck">' + esc(lead.oneLine) + '</p><ol class="points">' +
+      lead.points.map(function (t, i) { return '<li><b>' + (i + 1) + '</b><span>' + esc(t) + '</span></li>'; }).join('') + '</ol>' +
+      '<div class="meta">' + metaHtml(lead, true).replace('<div class="meta">', '').replace(/<\/div>$/, '') +
+      '<a class="read" href="#/a/' + encodeURIComponent(lead.id) + '">기사 전문 읽기 →</a></div></article>';
+    if (side.length) {
+      h += '<div class="side">' + side.map(function (a) {
+        return '<article class="sidestory">' + kickerHtml(a, true) + '<h3 class="hl">' + linkHtml(a) + '</h3><p class="deck">' + esc(a.oneLine) + '</p>' + metaHtml(a, false) + '</article>';
+      }).join('') + '</div>';
+    }
+    h += '</div>';
+    if (rest.length) {
+      h += '<div class="rest">' + rest.map(function (a) {
+        return '<article>' + kickerHtml(a, true) + '<h3 class="hl">' + linkHtml(a) + '</h3><p class="deck">' + esc(a.oneLine) + '</p>' + metaHtml(a, false) + '</article>';
+      }).join('') + '</div>';
+    }
+    return h;
+  }
+
+  // ---------- 기사 화면 ----------
+  function articleHtml() {
+    const a = state.article;
+    if (!a) return '<div class="loading">불러오는 중…</div>';
+    const m = impactOf(a);
+    // 같은 날 기사 목록(이전/다음, 다른 기사용)
+    const day = state.editionDate === a.date ? sortStories(state.edition) : [];
+    const idx = day.findIndex(function (x) { return x.id === a.id; });
+    const prevA = idx > 0 ? day[idx - 1] : null;
+    const nextA = idx >= 0 && idx < day.length - 1 ? day[idx + 1] : null;
+    const others = day.filter(function (x) { return x.id !== a.id; });
+    // 탭 내용
+    let body = '';
+    if (state.tab === 'full') {
+      body = '<div class="cols">' + a.paragraphsKo.map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('') + '</div>';
+    } else if (state.tab === 'compare') {
+      const n = Math.max(a.paragraphsKo.length, a.paragraphsEn.length);
+      body = '<div><div class="pairhead label"><span>한국어 해석</span><span>ENGLISH ORIGINAL</span></div>';
+      for (let i = 0; i < n; i++) body += '<div class="pair"><p>' + esc(a.paragraphsKo[i] || '') + '</p><p class="eng">' + esc(a.paragraphsEn[i] || '') + '</p></div>';
+      body += '</div>';
+    } else {
+      body = '<div class="label">한 줄 요약</div><p class="pull">' + esc(a.oneLine) + '</p><div class="label" style="padding-bottom:8px;border-bottom:1px solid var(--ink)">핵심 포인트</div><ol class="bigpoints">' +
+        a.points.map(function (t, i) { return '<li><b>' + (i + 1) + '</b><span>' + esc(t) + '</span></li>'; }).join('') + '</ol>';
+    }
+    const tabs = [['summary', '요약'], ['full', '전문 해석'], ['compare', '원문 대조']].map(function (t) {
+      return '<button type="button" role="tab" class="tab' + (state.tab === t[0] ? ' on' : '') + '" data-act="tab" data-v="' + t[0] + '" aria-selected="' + (state.tab === t[0]) + '">' + t[1] + '</button>';
+    }).join('');
+    const pn = (prevA || nextA) ? '<div class="prevnext">' +
+      (prevA ? '<a href="#/a/' + encodeURIComponent(prevA.id) + '"><small>← 이전 기사</small>' + esc(prevA.titleKo) + '</a>' : '<span></span>') +
+      (nextA ? '<a class="next" href="#/a/' + encodeURIComponent(nextA.id) + '"><small>다음 기사 →</small>' + esc(nextA.titleKo) + '</a>' : '') + '</div>' : '';
+    const origin = a.url ? '<a class="btn-solid" href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer">원문 확인하기 ↗</a>' : '<span>원문 링크가 등록되지 않았습니다</span>';
+    const rail = '<aside class="rail" aria-label="다른 기사"><div class="label" style="padding-bottom:8px;border-bottom:1px solid var(--ink)">' + (others.length ? dots(a.date) + ' 다른 기사' : '다른 기사') + '</div>' +
+      (others.length ? others.map(function (x) { return '<div class="item">' + kickerHtml(x, false) + '<a href="#/a/' + encodeURIComponent(x.id) + '">' + esc(x.titleKo) + '</a><div class="meta">' + '<span class="imp ' + impactOf(x).cls + '">' + impactOf(x).arrow + ' ' + impactOf(x).label + '</span></div></div>'; }).join('') : '<div class="item hint">같은 날 다른 기사가 없습니다.</div>') + '</aside>';
+    return '<a class="back" href="#/d/' + a.date + '">← ' + dots(a.date) + ' 1면으로</a><div class="art-wrap"><article class="article">' + kickerHtml(a, true) +
+      '<h2>' + esc(a.titleKo) + '</h2>' + (a.titleEn ? '<p class="en" style="font-size:16px">' + esc(a.titleEn) + '</p>' : '') +
+      '<div class="byline"><span>' + esc(a.source) + '</span><span class="imp ' + m.cls + '">' + m.arrow + ' ' + m.label + '</span><span>중요도 ' + esc(a.importance) + '</span></div>' +
+      '<div class="tabs" role="tablist" aria-label="보기 방식">' + tabs + '</div><div class="tabbody">' + body + '</div>' + pn +
+      '<div class="foot"><span>AI 번역·요약본입니다. 수치와 고유명사는 원문과 대조해 확인하세요.</span>' + origin + '</div></article>' + rail + '</div>';
+  }
+
+  // ---------- 검색 결과 ----------
+  function searchHtml() {
+    if (state.loading || !state.results) return '<div class="loading">검색 중…</div>';
+    if (!state.results.length) return emptyHtml('검색 결과가 없습니다', '다른 키워드로 검색해 보세요.');
+    return '<div class="label" style="padding-bottom:8px;border-bottom:1px solid var(--ink)">‘' + esc(state.query) + '’ 검색 결과 ' + state.results.length + '건 (전체 기간, 최신순)</div>' +
+      state.results.map(function (a) {
+        return '<article style="padding:20px 0;border-bottom:1px solid var(--rule)">' + kickerHtml(a, true) + '<h3 class="hl" style="font-size:22px">' + linkHtml(a) + '</h3><p class="deck">' + esc(a.oneLine) + '</p>' + metaHtml(a, true) + '</article>';
+      }).join('');
+  }
+
+  // ---------- 등록 화면 ----------
+  function writeHtml() {
+    const tagChips = TAGS.map(function (t) { return '<button type="button" class="chip" data-act="chip" data-chip="' + t + '" aria-pressed="false">' + t + '</button>'; }).join('');
+    const seg = function (group, items, active) {
+      return '<div class="seg" role="group">' + items.map(function (v) {
+        return '<button type="button" data-act="seg" data-seg="' + group + '" data-v="' + v + '" class="' + (v === active ? 'on' : '') + '" aria-pressed="' + (v === active) + '">' + (IMPACT[v] ? IMPACT[v].arrow + ' ' : '') + v + '</button>';
+      }).join('') + '</div>';
+    };
+    return '<div class="formwrap"><h2>뉴스 등록</h2><p class="lede">Claude로 번역·요약한 결과를 붙여넣으면 시트의 해당 월 탭에 저장됩니다.</p>' +
+      (DEMO ? '<div class="msg warn">샘플 모드입니다. 저장은 되지 않고, 화면 구성만 확인할 수 있습니다.</div>' : '') +
+      '<div id="formMsg"></div>' +
+      '<section class="box"><h3>1. Claude 결과 한 번에 붙여넣기</h3><p>요청문을 복사해 영어 원문과 함께 Claude에게 보내고, 받은 답변 전체를 아래에 붙여넣으세요.</p>' +
+      '<div class="row" style="margin-bottom:14px"><button type="button" class="btn-line" data-act="copy-prompt">Claude용 요청문 복사</button></div>' +
+      '<div class="fld"><label for="f-paste">Claude 답변</label><textarea class="inp" id="f-paste" style="min-height:160px" placeholder="[한글제목] ... [한줄요약] ... 형식의 답변 전체"></textarea></div>' +
+      '<button type="button" class="btn-line" data-act="fill-paste">아래 칸 자동 채우기</button></section>' +
+      '<section class="box"><h3>2. 기사 정보 확인</h3><p>자동으로 채워진 내용을 확인하고, 비어 있는 칸은 직접 입력하세요.</p>' +
+      '<div class="grid"><div class="fld"><label for="f-date">기사 날짜</label><input class="inp" id="f-date" type="date" value="' + (state.date || todayStr()) + '"></div>' +
+      '<div class="fld"><label for="f-source">출처</label><input class="inp" id="f-source" list="srcList" value="' + esc(getPref('source') || 'Platts') + '"><datalist id="srcList"><option value="Platts"><option value="ICIS"><option value="Argus"><option value="기타 매체"></datalist></div></div>' +
+      '<div class="fld"><label for="f-titleEn">영문 제목</label><input class="inp" id="f-titleEn" type="text"></div>' +
+      '<div class="fld"><label for="f-titleKo">한글 제목 (필수)</label><input class="inp" id="f-titleKo" type="text"></div>' +
+      '<div class="fld"><label for="f-url">원문 URL</label><input class="inp" id="f-url" type="url" placeholder="https://"></div>' +
+      '<div class="fld"><div class="lab">품목 태그 (여러 개 선택 가능, 비우면 기타)</div><div class="chips">' + tagChips + '</div></div>' +
+      '<div class="grid"><div class="fld"><div class="lab">가격 영향</div>' + seg('impact', ['상승', '하락', '중립'], '중립') + '</div>' +
+      '<div class="fld"><div class="lab">중요도</div>' + seg('importance', ['높음', '보통', '낮음'], '보통') + '</div></div>' +
+      '<div class="fld"><label for="f-oneLine">한 줄 요약 (필수)</label><textarea class="inp" id="f-oneLine" style="min-height:76px"></textarea></div>' +
+      '<div class="fld"><label for="f-points">핵심 포인트 (필수)</label><textarea class="inp" id="f-points" style="min-height:120px"></textarea><div class="hint">한 줄에 하나씩 입력합니다.</div></div>' +
+      '<div class="fld"><label for="f-bodyKo">전문 해석 (필수)</label><textarea class="inp" id="f-bodyKo" style="min-height:220px"></textarea><div class="hint">문단 사이에 빈 줄을 넣으면 원문 대조 화면에서 문단끼리 짝지어 보입니다.</div></div>' +
+      '<div class="fld"><label for="f-bodyEn">영어 원문 (필수)</label><textarea class="inp" id="f-bodyEn" style="min-height:220px"></textarea><div class="hint">전문 해석과 같은 문단 구분(빈 줄)을 유지하세요.</div></div></section>' +
+      '<section class="box"><h3>3. 저장</h3><div class="fld"><label for="f-key">등록 키</label><input class="inp" id="f-key" type="password" autocomplete="off" value="' + esc(getPref('key')) + '" style="max-width:320px"></div>' +
+      '<div class="fld"><label style="display:inline-flex;align-items:center;gap:8px;font-weight:500"><input type="checkbox" id="f-remember"' + (getPref('key') ? ' checked' : '') + ' style="width:18px;height:18px"> 이 브라우저에 등록 키 기억</label></div>' +
+      '<div class="row"><button type="button" class="btn-solid" data-act="submit">저장하기</button><button type="button" class="btn-line" data-act="reset-form">칸 비우기</button></div></section></div>';
+  }
+
+  // =====================================================================
+  // 9. 등록 화면 동작
+  // =====================================================================
+  // 안내 메시지 표시 (kind: ok / warn / err / info)
+  function setMsg(kind, html) { const el = $('#formMsg'); if (el) el.innerHTML = html ? '<div class="msg ' + kind + '">' + html + '</div>' : ''; }
+  // 칸 값 읽기/쓰기
+  function fv(id) { const el = $('#' + id); return el ? el.value : ''; }
+  function setFv(id, v) { const el = $('#' + id); if (el) el.value = v; }
+  // 분할 버튼(가격영향·중요도) 선택 바꾸기
+  function setSeg(group, v) {
+    document.querySelectorAll('#main [data-seg="' + group + '"]').forEach(function (b) { const on = b.dataset.v === v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+  }
+  // 품목 칩 선택 바꾸기
+  function setChips(list) {
+    document.querySelectorAll('#main [data-chip]').forEach(function (b) { const on = list.indexOf(b.dataset.chip) >= 0; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+  }
+  // 현재 폼 내용을 요청 객체로 만들기
+  function readForm() {
+    const tags = Array.prototype.map.call(document.querySelectorAll('#main [data-chip].on'), function (b) { return b.dataset.chip; });
+    const seg = function (g) { const b = document.querySelector('#main [data-seg="' + g + '"].on'); return b ? b.dataset.v : ''; };
+    return {
+      date: fv('f-date'), source: fv('f-source').trim(), titleEn: fv('f-titleEn').trim(), titleKo: fv('f-titleKo').trim(), url: fv('f-url').trim(),
+      tags: tags, impact: seg('impact'), importance: seg('importance'), oneLine: fv('f-oneLine').trim(), points: fv('f-points'),
+      bodyKo: fv('f-bodyKo'), bodyEn: fv('f-bodyEn')
+    };
+  }
+  // Claude 답변을 칸별로 나눠 채우기
+  function fillFromPaste() {
+    const text = fv('f-paste');
+    if (!text.trim()) { setMsg('warn', '붙여넣은 내용이 없습니다. Claude 답변 전체를 붙여넣으세요.'); return; }
+    // [제목] 줄을 기준으로 구역 나누기
+    const map = { '한글제목': 'titleKo', '영문제목': 'titleEn', '한줄요약': 'oneLine', '핵심포인트': 'points', '전문해석': 'bodyKo', '가격영향': 'impact', '중요도': 'importance', '품목': 'tags' };
+    const out = {}; let cur = null;
+    text.split(/\r?\n/).forEach(function (line) {
+      const m = line.match(/^\s*\[(한글제목|영문제목|한줄요약|핵심포인트|전문해석|가격영향|중요도|품목|기사 원문)\]\s*(.*)$/);
+      if (m) { cur = map[m[1]] || null; if (cur) out[cur] = m[2] ? [m[2]] : []; }
+      else if (cur) out[cur].push(line);
+    });
+    const get = function (k) { return out[k] ? out[k].join('\n').trim() : ''; };
+    const filled = [];
+    if (get('titleKo')) { setFv('f-titleKo', get('titleKo')); filled.push('한글 제목'); }
+    if (get('titleEn')) { setFv('f-titleEn', get('titleEn')); filled.push('영문 제목'); }
+    if (get('oneLine')) { setFv('f-oneLine', get('oneLine')); filled.push('한 줄 요약'); }
+    if (get('points')) { setFv('f-points', get('points').split('\n').map(function (s) { return s.replace(/^\s*(?:[-•·*]|\d+[.)])\s*/, '').trim(); }).filter(Boolean).join('\n')); filled.push('핵심 포인트'); }
+    if (get('bodyKo')) { setFv('f-bodyKo', get('bodyKo')); filled.push('전문 해석'); }
+    if (IMPACT[get('impact')]) { setSeg('impact', get('impact')); filled.push('가격 영향'); }
+    if (RANK[get('importance')] != null) { setSeg('importance', get('importance')); filled.push('중요도'); }
+    if (get('tags')) { setChips(get('tags').split(/[,\s]+/).map(function (t) { return t.trim().toUpperCase(); })); filled.push('품목'); }
+    if (!filled.length) { setMsg('err', '형식을 찾지 못했습니다. [한글제목], [한줄요약] 같은 대괄호 제목 줄이 있는지 확인하세요.'); return; }
+    setMsg('info', filled.join(', ') + ' 칸을 채웠습니다. <b>영문 제목, 원문 URL, 영어 원문</b>은 직접 입력하세요.');
+  }
+  // 글자를 클립보드에 복사 (실패하면 선택 방식으로 대체)
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch (e) {
+      const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      let ok = false; try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+      document.body.removeChild(ta); return ok;
+    }
+  }
+  // 저장하기
+  async function submitForm(force) {
+    const f = readForm(); const key = fv('f-key');
+    if (!key) { setMsg('err', '등록 키를 입력하세요.'); return; }
+    if (!f.titleKo || !f.oneLine || !f.points.trim() || !fv('f-bodyKo').trim() || !fv('f-bodyEn').trim()) { setMsg('err', '한글 제목, 한 줄 요약, 핵심 포인트, 전문 해석, 영어 원문은 꼭 입력해야 합니다.'); return; }
+    setMsg('info', '저장하는 중입니다…');
+    const res = await apiPost({ key: key, force: !!force, article: f });
+    if (res.ok) {
+      // 기억 설정 반영
+      setPref('source', f.source); if ($('#f-remember').checked) setPref('key', key); else setPref('key', '');
+      // 이 날짜의 저장본을 지워 다음에 새로 받도록 함
+      cacheDel('ed:' + res.date); cacheDel('dates'); state.datesReady = false; state.editionDate = null;
+      setMsg('ok', '저장했습니다. (' + esc(res.id) + ') <a href="#/a/' + encodeURIComponent(res.id) + '">기사 보기</a> · <a href="#/d/' + res.date + '">' + dots(res.date) + ' 1면 보기</a>');
+      resetForm(true);
+      window.scrollTo(0, 0);
+    } else if (res.code === 'DUPLICATE') {
+      setMsg('warn', esc(res.message) + ' <button type="button" data-act="force-submit">그래도 저장</button>');
+    } else {
+      setMsg('err', esc(res.message || '저장하지 못했습니다.'));
+    }
+  }
+  // 칸 비우기 (날짜·출처·등록 키는 유지)
+  function resetForm(keepMsg) {
+    ['f-titleEn', 'f-titleKo', 'f-url', 'f-oneLine', 'f-points', 'f-bodyKo', 'f-bodyEn', 'f-paste'].forEach(function (id) { setFv(id, ''); });
+    setChips([]); setSeg('impact', '중립'); setSeg('importance', '보통');
+    if (!keepMsg) setMsg('', '');
+  }
+
+  // =====================================================================
+  // 10. 이벤트 연결 (화면 전체에서 한 번만 연결)
+  // =====================================================================
+  document.addEventListener('click', function (e) {
+    const t = e.target.closest('[data-act]');
+    if (!t) return;
+    const act = t.dataset.act, v = t.dataset.v;
+    const ds = state.dates.map(function (d) { return d.date; });
+    if (act === 'tag') { state.tag = v; render(); }
+    else if (act === 'impact') { state.impact = v; render(); }
+    else if (act === 'prev') { const p = ds.filter(function (d) { return d < state.date; }).pop(); if (p) location.hash = '#/d/' + p; }
+    else if (act === 'next') { const n = ds.find(function (d) { return d > state.date; }); if (n) location.hash = '#/d/' + n; }
+    else if (act === 'latest') { location.hash = '#/d/' + ds[ds.length - 1]; }
+    else if (act === 'refresh') { cacheDel('ed:' + state.date); cacheDel('dates'); state.datesReady = false; state.editionDate = null; route(); }
+    else if (act === 'tab') { state.tab = v; setPref('tab', v); render(); }
+    else if (act === 'chip') { t.classList.toggle('on'); t.setAttribute('aria-pressed', String(t.classList.contains('on'))); }
+    else if (act === 'seg') { setSeg(t.dataset.seg, v); }
+    else if (act === 'copy-prompt') { copyText(PROMPT).then(function (ok) { setMsg(ok ? 'ok' : 'err', ok ? '요청문을 복사했습니다. Claude 대화창에 붙여넣고, 맨 아래에 영어 원문을 넣어 보내세요.' : '복사하지 못했습니다. 브라우저 권한을 확인하세요.'); }); }
+    else if (act === 'fill-paste') { fillFromPaste(); }
+    else if (act === 'submit') { submitForm(false); }
+    else if (act === 'force-submit') { submitForm(true); }
+    else if (act === 'reset-form') { resetForm(false); }
+  });
+  // 날짜 선택칸
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'pickDate' && e.target.value) location.hash = '#/d/' + e.target.value;
+  });
+  // 검색칸: 입력이 멈추면 검색, 비우면 1면으로 복귀
+  let searchTimer = null;
+  $('#q').addEventListener('input', function (e) {
+    clearTimeout(searchTimer);
+    const q = e.target.value.trim();
+    searchTimer = setTimeout(function () {
+      if (q.length >= 2) location.hash = '#/s/' + encodeURIComponent(q);
+      else if (!q && state.view === 'search') location.hash = '#/d/' + (state.date || '');
+    }, 400);
+  });
+  $('#q').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { clearTimeout(searchTimer); const q = e.target.value.trim(); if (q.length >= 2) location.hash = '#/s/' + encodeURIComponent(q); }
+  });
+  // 주소의 # 부분이 바뀌면 화면 이동
+  window.addEventListener('hashchange', route);
+  // 처음 열 때 한 번 실행
+  route();
+})();
+</script>
+</body>
+</html>
