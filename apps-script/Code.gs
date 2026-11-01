@@ -22,14 +22,16 @@ const TZ = 'Asia/Seoul';
 const LIGHT_COLS = 12;
 // 기사를 열 때만 읽는 무거운 열의 시작 번호 (M열 = 13번째)
 const HEAVY_START_COL = 13;
-// 시트 전체 열의 개수 (A~P열)
-const TOTAL_COLS = 16;
+// 시트 전체 열의 개수 (A~S열)
+const TOTAL_COLS = 19;
+// 화면과 맞추기 위한 백엔드 버전 (화면이 이 값을 확인해 예전 코드로 저장하는 사고를 막음)
+const API_VERSION = 2;
 // 셀 하나에 안전하게 넣을 최대 글자 수 (구글시트 한도는 5만 자)
 const CELL_LIMIT = 45000;
 // 월 탭 맨 윗줄에 들어가는 머리글 (순서를 바꾸면 안 됨)
-const HEADERS = ['id', '날짜', '출처', '품목태그', '제목(한글)', '제목(영문)', '한 줄 요약', '핵심 포인트', '가격영향', '중요도', '원문URL', '등록일시', '전문 해석', '전문 해석(이어서)', '영어 원문', '영어 원문(이어서)'];
+const HEADERS = ['id', '날짜', '출처', '품목태그', '제목(한글)', '제목(영문)', '한 줄 요약', '핵심 포인트', '가격영향', '중요도', '원문URL', '등록일시', '전문 해석', '전문 해석(이어서)', '영어 원문', '영어 원문(이어서)', '시사점', '작성자', '최종업데이트'];
 // 새 월 탭의 열 너비 (픽셀) - 머리글 순서와 같음
-const COL_WIDTHS = [110, 90, 80, 80, 260, 260, 320, 320, 70, 70, 180, 140, 200, 200, 200, 200];
+const COL_WIDTHS = [110, 90, 80, 80, 260, 260, 320, 320, 70, 70, 180, 140, 200, 200, 200, 200, 300, 140, 160];
 // 가격영향 입력 허용 값
 const IMPACT_VALUES = ['상승', '하락', '중립'];
 // 중요도 입력 허용 값
@@ -131,7 +133,7 @@ function ping_() {
   // 월 탭 이름만 모으기
   const tabs = monthSheets_(ss).map(function (s) { return s.getName(); });
   // 연결 성공 응답
-  return { ok: true, message: '연결되었습니다.', tabs: tabs, now: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm') };
+  return { ok: true, version: API_VERSION, message: '연결되었습니다.', tabs: tabs, now: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm') };
 }
 
 // 기사가 있는 날짜와 건수 목록
@@ -216,8 +218,15 @@ function getArticle_(id) {
   const row = sh.getRange(idx + 2, 1, 1, TOTAL_COLS).getValues()[0];
   // 가벼운 정보를 객체로 변환
   const article = rowToLight_(row);
-  // 전문 해석 두 칸을 이어 붙여 문단별로 나눔
-  article.paragraphsKo = splitParagraphs_(String(row[HEAVY_START_COL - 1] || '') + String(row[HEAVY_START_COL] || ''));
+  // 전문 해석 두 칸을 이어 붙인 마크다운 글 (화면이 소제목, 목록, 굵은 글씨를 그려 줌)
+  article.bodyKo = (String(row[HEAVY_START_COL - 1] || '') + String(row[HEAVY_START_COL] || '')).trim();
+  // 예전 화면과의 호환을 위해 문단 배열도 함께 제공
+  article.paragraphsKo = splitParagraphs_(article.bodyKo);
+  // 시사점 (Q열): 줄마다 '제목||본문'
+  article.insights = parsePairs_(row[16]);
+  // 작성자 (R열), 최종 업데이트 (S열)
+  article.author = String(row[17] || '').trim();
+  article.updatedAt = String(row[18] || '').trim();
   // 영어 원문 두 칸을 이어 붙여 문단별로 나눔
   article.paragraphsEn = splitParagraphs_(String(row[HEAVY_START_COL + 1] || '') + String(row[HEAVY_START_COL + 2] || ''));
   // 응답 객체
@@ -244,7 +253,7 @@ function searchArticles_(q) {
     // 탭의 가벼운 정보를 모두 읽어 검색어가 들어간 기사만 담음
     readLightRows_(sh).forEach(function (a) {
       // 검색 대상 글자를 하나로 합침
-      const hay = (a.titleKo + ' ' + a.titleEn + ' ' + a.oneLine + ' ' + a.points.join(' ')).toLowerCase();
+      const hay = (a.titleKo + ' ' + a.titleEn + ' ' + a.oneLine + ' ' + a.points.map(function (p) { return p.head + ' ' + p.body; }).join(' ')).toLowerCase();
       // 포함되면 결과에 추가
       if (hay.indexOf(word) >= 0) found.push(a);
     });
@@ -320,7 +329,7 @@ function registerArticle_(body) {
     // 날짜나 수식으로 바뀌지 않도록 일반 텍스트 서식 적용
     range.setNumberFormat('@');
     // 값 채우기 (머리글 순서와 동일)
-    range.setValues([[id, a.date, a.source, a.tags.join(','), a.titleKo, a.titleEn, a.oneLine, a.points.join('\n'), a.impact, a.importance, a.url, nowStr, ko[0], ko[1], en[0], en[1]]]);
+    range.setValues([[id, a.date, a.source, a.tags.join(','), a.titleKo, a.titleEn, a.oneLine, joinPairs_(a.points), a.impact, a.importance, a.url, nowStr, ko[0], ko[1], en[0], en[1], joinPairs_(a.insights), a.author, a.updatedAt]]);
     // 행 높이가 늘어나지 않도록 잘라서 표시
     range.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
     // 위쪽 정렬
@@ -350,12 +359,13 @@ function normalizeInput_(b) {
   // 한 줄 요약 (필수)
   const oneLine = cut_(b.oneLine, 1000);
   if (!oneLine) return { error: '한 줄 요약을 입력하세요.' };
-  // 핵심 포인트: 배열 또는 줄바꿈 문자열 모두 허용
-  const pointsRaw = Array.isArray(b.points) ? b.points : String(b.points || '').split(/\r?\n/);
-  // 앞의 기호(-, •, 번호)를 지우고 빈 줄 제거
-  const points = pointsRaw.map(function (s) { return String(s).replace(/^\s*(?:[-•·*]|\d+[.)])\s*/, '').trim(); }).filter(Boolean);
-  if (!points.length) return { error: '핵심 포인트를 한 줄 이상 입력하세요.' };
-  if (points.join('\n').length > 3000) return { error: '핵심 포인트가 너무 깁니다. (3,000자 이내)' };
+  // 핵심 요약: 배열(글자 또는 {head, body}) 또는 줄바꿈 문자열 모두 허용
+  const points = normPairs_(Array.isArray(b.points) ? b.points : String(b.points || '').split(/\r?\n/));
+  if (!points.length) return { error: '핵심 요약을 한 줄 이상 입력하세요.' };
+  if (joinPairs_(points).length > 6000) return { error: '핵심 요약이 너무 깁니다. (6,000자 이내)' };
+  // 시사점 (선택)
+  const insights = normPairs_(Array.isArray(b.insights) ? b.insights : String(b.insights || '').split(/\r?\n/));
+  if (joinPairs_(insights).length > 6000) return { error: '시사점이 너무 깁니다. (6,000자 이내)' };
   // 가격영향 값 검사
   const impact = String(b.impact || '').trim();
   if (IMPACT_VALUES.indexOf(impact) < 0) return { error: '가격영향은 상승, 하락, 중립 중에서 고르세요.' };
@@ -373,13 +383,15 @@ function normalizeInput_(b) {
   if (url && !/^https?:\/\//i.test(url)) return { error: '원문 URL은 http:// 또는 https:// 로 시작해야 합니다.' };
   // 출처 (비면 기타 매체)
   const source = cut_(b.source, 100) || '기타 매체';
-  // 전문 해석과 영어 원문 (필수, 줄바꿈 정리)
+  // 작성자와 최종 업데이트 일시 (선택)
+  const author = cut_(b.author, 200);
+  const updatedAt = cut_(b.updatedAt, 40);
+  // 전문 해석(필수)과 영어 원문(선택), 줄바꿈 정리
   const bodyKo = String(b.bodyKo || '').replace(/\r\n/g, '\n').trim();
   const bodyEn = String(b.bodyEn || '').replace(/\r\n/g, '\n').trim();
   if (!bodyKo) return { error: '전문 해석을 입력하세요.' };
-  if (!bodyEn) return { error: '영어 원문을 입력하세요.' };
   // 검사를 통과한 값 묶음
-  return { value: { date: date, source: source, tags: uniqTags, titleKo: titleKo, titleEn: titleEn, oneLine: oneLine, points: points, impact: impact, importance: importance, url: url, bodyKo: bodyKo, bodyEn: bodyEn } };
+  return { value: { date: date, source: source, tags: uniqTags, titleKo: titleKo, titleEn: titleEn, oneLine: oneLine, points: points, impact: impact, importance: importance, url: url, bodyKo: bodyKo, bodyEn: bodyEn, insights: insights, author: author, updatedAt: updatedAt } };
 }
 
 // 긴 본문을 두 칸으로 나눔 (두 칸을 이어 붙이면 원문과 같음). 너무 길면 null
@@ -433,7 +445,7 @@ function rowToLight_(r) {
     titleKo: String(r[4] || '').trim(),
     titleEn: String(r[5] || '').trim(),
     oneLine: String(r[6] || '').trim(),
-    points: String(r[7] || '').split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean),
+    points: parsePairs_(r[7]),
     impact: String(r[8] || '').trim(),
     importance: String(r[9] || '').trim(),
     url: String(r[10] || '').trim(),
@@ -496,6 +508,40 @@ function isValidDate_(s) {
 // 문자열 앞뒤 공백을 지우고 최대 길이로 자름
 function cut_(v, max) {
   return String(v == null ? '' : v).trim().slice(0, max);
+}
+
+// '제목||본문' 줄들을 [{head, body}] 배열로 변환 (|| 가 없으면 제목 없이 본문만)
+function parsePairs_(text) {
+  return String(text || '').split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean).map(function (line) {
+    const i = line.indexOf('||');
+    return i >= 0 ? { head: line.slice(0, i).trim(), body: line.slice(i + 2).trim() } : { head: '', body: line };
+  });
+}
+
+// [{head, body}] 배열을 시트에 저장하는 줄 형식('제목||본문')으로 변환
+function joinPairs_(list) {
+  return list.map(function (p) { return p.head ? p.head + '||' + p.body : p.body; }).join('\n');
+}
+
+// 입력 항목(글자 또는 {head, body})을 정리해 [{head, body}] 로 통일
+function normPairs_(arr) {
+  const out = [];
+  arr.forEach(function (item) {
+    let head = '', body = '';
+    if (item && typeof item === 'object') {
+      head = cut_(item.head, 200);
+      body = cut_(item.body, 1500);
+    } else {
+      // 글자일 때는 앞의 목록 기호(-, •, 번호)를 지우고 '||' 로 제목과 본문을 나눔
+      const line = String(item == null ? '' : item).replace(/^\s*(?:[-•·*]|\d+[.)])\s*/, '').trim();
+      const i = line.indexOf('||');
+      head = i >= 0 ? cut_(line.slice(0, i), 200) : '';
+      body = cut_(i >= 0 ? line.slice(i + 2) : line, 1500);
+    }
+    // 제목이나 본문 중 하나라도 있으면 담음
+    if (head || body) out.push({ head: head, body: body });
+  });
+  return out;
 }
 
 // 본문을 빈 줄 기준으로 문단 배열로 나눔

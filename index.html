@@ -152,6 +152,14 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
 .msg.info{border-color:var(--line);background:var(--field);color:var(--ink)}
 .msg a{font-weight:700}
 .msg button{margin-left:8px;min-height:36px;padding:0 12px;border:1px solid currentColor;background:transparent;color:inherit;font:inherit;font-weight:700}
+.md h4{margin:1.5em 0 .5em;font-size:17px;font-weight:900;break-after:avoid}
+.md h4:first-child{margin-top:0}
+.md ul{margin:0 0 1.3em;padding:0 0 0 1.2em;break-inside:avoid}
+.md li{margin:0 0 .45em;font-size:16px;line-height:1.9;word-break:keep-all}
+.bigpoints strong{display:block;margin-bottom:4px;font-size:17px;line-height:1.6}
+.adv{margin:0 0 6px;border-top:1px solid var(--rule);padding-top:8px}
+.adv summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-family:var(--sans);font-size:13.5px;font-weight:700}
+.adv[open] summary{margin-bottom:12px}
 .empty{padding:80px 0;text-align:center;color:var(--mute);font-family:var(--sans)}
 .empty strong{display:block;margin-bottom:10px;font-family:var(--serif);font-size:24px;color:var(--ink)}
 .empty .btn-solid{margin-top:22px}
@@ -217,25 +225,40 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
 
   // Claude에게 보낼 번역·요약 요청문 (결과를 등록 화면에 한 번에 붙여넣을 수 있는 형식)
   const PROMPT = [
-    '아래 영어 석유화학 뉴스를 한국어로 번역하고 요약해 주세요. 반드시 아래 형식으로만 출력하세요.',
-    '대괄호 제목 줄은 그대로 쓰고, 내용은 그 아래 줄에 적습니다.',
+    '아래 영어 기사를 한국어로 번역하고 정리해 주세요. 반드시 아래 마크다운 형식을 그대로 지켜 출력하세요.',
     '',
-    '[한글제목]',
-    '(자연스러운 한국어 제목)',
-    '[한줄요약]',
-    '(한 문장, 90자 이내)',
-    '[핵심포인트]',
-    '- (3~4개, 각각 한 문장)',
-    '[전문해석]',
-    '(전문 번역. 원문 문단 구분을 그대로 따라 문단 사이에 빈 줄을 둠)',
-    '[가격영향]',
-    '(상승, 하락, 중립 중 하나. 해당 품목 가격 방향에 미치는 영향 기준)',
-    '[중요도]',
-    '(높음, 보통, 낮음 중 하나)',
-    '[품목]',
-    '(SM, AN, BD, MMA, BPA, 기타 중 해당하는 것을 쉼표로 구분)',
+    '### [에너지/원자재 마켓 브리프] (한국어 제목)',
     '',
-    '규칙: 수치, 단위, 고유명사, 회사명은 원문 그대로 유지하고 원문에 없는 내용은 추가하지 마세요.',
+    '* **발행일시**: (원문의 발행일시)',
+    '* **최종 업데이트**: (원문의 최종 업데이트 일시)',
+    '* **작성자**: (원문의 작성자)',
+    '',
+    '---',
+    '',
+    '### 1. 핵심 요약 (Executive Summary)',
+    '',
+    '* **(핵심 1 제목)**: (한두 문장 설명)',
+    '* **(핵심 2 제목)**: (한두 문장 설명)',
+    '* **(핵심 3 제목)**: (한두 문장 설명)',
+    '',
+    '---',
+    '',
+    '### 2. 시사점 및 영향 분석 (Key Takeaways)',
+    '',
+    '* **(시사점 1 제목)**:',
+    '(설명)',
+    '* **(시사점 2 제목)**:',
+    '(설명)',
+    '* **(시사점 3 제목)**:',
+    '(설명)',
+    '',
+    '---',
+    '',
+    '### 3. 전체 내용 (Full Translation)',
+    '',
+    '(원문 전체를 빠짐없이 번역. 맨 위에 핵심 3줄을 "* " 목록으로 두고, 이어서 원문 문단 순서대로 번역합니다. 소제목은 **굵은 글씨** 한 줄로 쓰고, 문단 사이에는 빈 줄을 둡니다.)',
+    '',
+    '규칙: 수치, 단위, 고유명사, 회사명은 원문 그대로 유지하고 원문에 없는 내용은 추가하지 마세요. 시사점은 석유화학 구매·조달 담당자의 관점에서 작성하세요.',
     '',
     '[기사 원문]',
     '(여기에 영어 원문 붙여넣기)'
@@ -347,6 +370,20 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   // 단순 값 저장/읽기 (탭 기억, 등록 키 기억 등)
   function setPref(k, v) { try { localStorage.setItem(STORE + 'pref:' + k, v); } catch (e) { /* 무시 */ } }
   function getPref(k) { try { return localStorage.getItem(STORE + 'pref:' + k) || ''; } catch (e) { return ''; } }
+  // 핵심 요약·시사점을 [{head, body}] 모양으로 통일 (예전 글자 배열도 받아들임)
+  function normPts(arr) { return (arr || []).map(function (p) { return typeof p === 'string' ? { head: '', body: p } : { head: p.head || '', body: p.body || '' }; }); }
+  // 기사 한 건의 빠진 항목을 기본값으로 채움
+  function normArticle(a) {
+    a.points = normPts(a.points); a.insights = normPts(a.insights);
+    if (a.bodyKo == null && a.paragraphsKo) a.bodyKo = a.paragraphsKo.join('\n\n');
+    a.bodyKo = a.bodyKo || ''; a.paragraphsEn = a.paragraphsEn || []; a.author = a.author || ''; a.updatedAt = a.updatedAt || '';
+    return a;
+  }
+  // 서버 응답 안의 기사들을 모두 통일
+  function normRes(res) {
+    if (res && res.ok) { if (res.articles) res.articles.forEach(normArticle); if (res.article) normArticle(res.article); }
+    return res;
+  }
   // 중요도 높은 순, 같으면 id 큰(나중에 등록된) 순으로 정렬
   function sortStories(list) {
     return list.slice().sort(function (a, b) {
@@ -381,17 +418,17 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   }
   // 읽기 요청
   async function apiGet(params) {
-    if (DEMO) return demoGet(params);
+    if (DEMO) return normRes(await demoGet(params));
     const url = API_URL + (API_URL.indexOf('?') >= 0 ? '&' : '?') + new URLSearchParams(params).toString();
     let res;
     try { res = await fetch(url, { method: 'GET', redirect: 'follow' }); }
     catch (e) {
       // 브라우저가 fetch 를 막는 경우(CORS)에는 스크립트 태그 방식(JSONP)으로 한 번 더 시도
-      try { return await jsonp(url); }
+      try { return normRes(await jsonp(url)); }
       catch (e2) { throw new Error('서버에 연결할 수 없습니다. 인터넷 연결과 웹앱 주소(API_URL)를 확인하세요.'); }
     }
     if (!res.ok) throw new Error('서버 응답 오류 (' + res.status + ')');
-    try { return await res.json(); }
+    try { return normRes(await res.json()); }
     catch (e) { throw new Error('서버 응답을 읽을 수 없습니다. 웹앱 배포 설정(액세스: 모든 사용자)을 확인하세요.'); }
   }
   // 등록 요청 (본문을 글자로 보내 브라우저의 사전 확인 요청을 피함)
@@ -446,7 +483,7 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
     // 지난 호는 오래 보관, 오늘 호는 일단 저장본을 보여 주고 곧바로 새로 받아 확인
     const cached = force ? null : cacheRead(key, isPast ? TTL_PAST : 24 * 3600 * 1000);
     if (cached) {
-      state.edition = cached; state.editionDate = date;
+      state.edition = cached.map(normArticle); state.editionDate = date;
       if (myTicket === ticket) render();
       if (isPast) return;
     }
@@ -459,7 +496,7 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   // 기사 한 건 불러오기
   async function loadArticle(id) {
     const cached = cacheRead('ar:' + id, TTL_PAST);
-    if (cached) return cached;
+    if (cached) return normArticle(cached);
     const res = await apiGet({ action: 'article', id: id });
     if (!res.ok) throw new Error(res.message || '기사를 불러오지 못했습니다.');
     cacheWrite('ar:' + id, res.article);
@@ -606,7 +643,7 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
     let h = '<div class="front"><article class="lead' + (side.length ? ' ruled' : '') + '">' + kickerHtml(lead, true) +
       '<h2 class="hl">' + linkHtml(lead) + '</h2>' + (lead.titleEn ? '<p class="en">' + esc(lead.titleEn) + '</p>' : '') +
       '<p class="deck">' + esc(lead.oneLine) + '</p><ol class="points">' +
-      lead.points.map(function (t, i) { return '<li><b>' + (i + 1) + '</b><span>' + esc(t) + '</span></li>'; }).join('') + '</ol>' +
+      lead.points.map(function (t, i) { return '<li><b>' + (i + 1) + '</b><span>' + esc(t.head || t.body) + '</span></li>'; }).join('') + '</ol>' +
       '<div class="meta">' + metaHtml(lead, true).replace('<div class="meta">', '').replace(/<\/div>$/, '') +
       '<a class="read" href="#/a/' + encodeURIComponent(lead.id) + '">기사 전문 읽기 →</a></div></article>';
     if (side.length) {
@@ -624,6 +661,29 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   }
 
   // ---------- 기사 화면 ----------
+  // 글 속의 **굵은 글씨**만 강조로 바꾸고 나머지는 모두 안전하게 이스케이프
+  function inlineMd(s) { return esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'); }
+  // 전문 해석(마크다운)을 HTML로 변환: 빈 줄로 나뉜 덩어리마다 목록, 소제목, 문단으로 처리
+  function mdHtml(md) {
+    return String(md || '').replace(/\r/g, '').split(/\n\s*\n/).map(function (block) {
+      const ls = block.split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+      if (!ls.length) return '';
+      // 모든 줄이 '* ' 또는 '- ' 로 시작하면 목록
+      if (ls.every(function (x) { return /^[*-]\s+/.test(x); })) {
+        return '<ul>' + ls.map(function (x) { return '<li>' + inlineMd(x.replace(/^[*-]\s+/, '')) + '</li>'; }).join('') + '</ul>';
+      }
+      // 한 줄 전체가 **굵은 글씨**이면 소제목
+      if (ls.length === 1 && /^\*\*(.+)\*\*$/.test(ls[0])) return '<h4>' + inlineMd(ls[0].replace(/^\*\*(.+)\*\*$/, '$1')) + '</h4>';
+      // 그 밖에는 문단
+      return '<p>' + inlineMd(ls.join(' ')) + '</p>';
+    }).join('');
+  }
+  // 마크다운을 문단별 일반 글로 나눔 (영어 원문과 문단끼리 짝지을 때 사용)
+  function splitParas(md) {
+    return String(md || '').replace(/\r/g, '').split(/\n\s*\n/).map(function (b) {
+      return b.split('\n').map(function (x) { return x.replace(/^\s*[*-]\s+/, '').replace(/\*\*/g, '').trim(); }).filter(Boolean).join(' ');
+    }).filter(Boolean);
+  }
   function articleHtml() {
     const a = state.article;
     if (!a) return '<div class="loading">불러오는 중…</div>';
@@ -634,21 +694,38 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
     const prevA = idx > 0 ? day[idx - 1] : null;
     const nextA = idx >= 0 && idx < day.length - 1 ? day[idx + 1] : null;
     const others = day.filter(function (x) { return x.id !== a.id; });
-    // 탭 내용
+    // 보여줄 탭: 시사점은 내용이 있을 때만, 원문 대조는 영어 원문이 있을 때만
+    const tabList = [['summary', '요약']];
+    if (a.insights.length) tabList.push(['insight', '시사점']);
+    tabList.push(['full', '전문 해석']);
+    if (a.paragraphsEn.length) tabList.push(['compare', '원문 대조']);
+    // 기억해 둔 탭이 이 기사에 없으면 요약으로
+    const cur = tabList.some(function (t) { return t[0] === state.tab; }) ? state.tab : 'summary';
+    // 제목(굵게)과 본문을 가진 항목 목록
+    const itemsHtml = function (list) {
+      return '<ol class="bigpoints">' + list.map(function (p, i) {
+        return '<li><b>' + (i + 1) + '</b><span>' + (p.head ? '<strong>' + esc(p.head) + '</strong>' : '') + esc(p.body) + '</span></li>';
+      }).join('') + '</ol>';
+    };
+    const sub = function (t) { return '<div class="label" style="padding-bottom:8px;border-bottom:1px solid var(--ink)">' + t + '</div>'; };
+    // 탭별 본문
     let body = '';
-    if (state.tab === 'full') {
-      body = '<div class="cols">' + a.paragraphsKo.map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('') + '</div>';
-    } else if (state.tab === 'compare') {
-      const n = Math.max(a.paragraphsKo.length, a.paragraphsEn.length);
+    if (cur === 'full') {
+      body = '<div class="cols md">' + mdHtml(a.bodyKo) + '</div>';
+    } else if (cur === 'compare') {
+      const ko = splitParas(a.bodyKo), n = Math.max(ko.length, a.paragraphsEn.length);
       body = '<div><div class="pairhead label"><span>한국어 해석</span><span>ENGLISH ORIGINAL</span></div>';
-      for (let i = 0; i < n; i++) body += '<div class="pair"><p>' + esc(a.paragraphsKo[i] || '') + '</p><p class="eng">' + esc(a.paragraphsEn[i] || '') + '</p></div>';
+      for (let i = 0; i < n; i++) body += '<div class="pair"><p>' + esc(ko[i] || '') + '</p><p class="eng">' + esc(a.paragraphsEn[i] || '') + '</p></div>';
       body += '</div>';
+    } else if (cur === 'insight') {
+      body = sub('시사점 및 영향 분석') + itemsHtml(a.insights);
     } else {
-      body = '<div class="label">한 줄 요약</div><p class="pull">' + esc(a.oneLine) + '</p><div class="label" style="padding-bottom:8px;border-bottom:1px solid var(--ink)">핵심 포인트</div><ol class="bigpoints">' +
-        a.points.map(function (t, i) { return '<li><b>' + (i + 1) + '</b><span>' + esc(t) + '</span></li>'; }).join('') + '</ol>';
+      // 핵심 요약에 제목이 있으면 한 줄 요약은 생략(첫 항목과 겹침)
+      const hasHead = a.points.some(function (p) { return p.head; });
+      body = (hasHead ? '' : '<div class="label">한 줄 요약</div><p class="pull">' + esc(a.oneLine) + '</p>') + sub('핵심 요약') + itemsHtml(a.points);
     }
-    const tabs = [['summary', '요약'], ['full', '전문 해석'], ['compare', '원문 대조']].map(function (t) {
-      return '<button type="button" role="tab" class="tab' + (state.tab === t[0] ? ' on' : '') + '" data-act="tab" data-v="' + t[0] + '" aria-selected="' + (state.tab === t[0]) + '">' + t[1] + '</button>';
+    const tabs = tabList.map(function (t) {
+      return '<button type="button" role="tab" class="tab' + (cur === t[0] ? ' on' : '') + '" data-act="tab" data-v="' + t[0] + '" aria-selected="' + (cur === t[0]) + '">' + t[1] + '</button>';
     }).join('');
     const pn = (prevA || nextA) ? '<div class="prevnext">' +
       (prevA ? '<a href="#/a/' + encodeURIComponent(prevA.id) + '"><small>← 이전 기사</small>' + esc(prevA.titleKo) + '</a>' : '<span></span>') +
@@ -658,7 +735,8 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
       (others.length ? others.map(function (x) { return '<div class="item">' + kickerHtml(x, false) + '<a href="#/a/' + encodeURIComponent(x.id) + '">' + esc(x.titleKo) + '</a><div class="meta">' + '<span class="imp ' + impactOf(x).cls + '">' + impactOf(x).arrow + ' ' + impactOf(x).label + '</span></div></div>'; }).join('') : '<div class="item hint">같은 날 다른 기사가 없습니다.</div>') + '</aside>';
     return '<a class="back" href="#/d/' + a.date + '">← ' + dots(a.date) + ' 1면으로</a><div class="art-wrap"><article class="article">' + kickerHtml(a, true) +
       '<h2>' + esc(a.titleKo) + '</h2>' + (a.titleEn ? '<p class="en" style="font-size:16px">' + esc(a.titleEn) + '</p>' : '') +
-      '<div class="byline"><span>' + esc(a.source) + '</span><span class="imp ' + m.cls + '">' + m.arrow + ' ' + m.label + '</span><span>중요도 ' + esc(a.importance) + '</span></div>' +
+      '<div class="byline"><span>' + esc(a.source) + '</span>' + (a.author ? '<span>작성자 ' + esc(a.author) + '</span>' : '') + (a.updatedAt ? '<span>최종 업데이트 ' + esc(a.updatedAt) + '</span>' : '') +
+      '<span class="imp ' + m.cls + '">' + m.arrow + ' ' + m.label + '</span><span>중요도 ' + esc(a.importance) + '</span></div>' +
       '<div class="tabs" role="tablist" aria-label="보기 방식">' + tabs + '</div><div class="tabbody">' + body + '</div>' + pn +
       '<div class="foot"><span>AI 번역·요약본입니다. 수치와 고유명사는 원문과 대조해 확인하세요.</span>' + origin + '</div></article>' + rail + '</div>';
   }
@@ -681,26 +759,31 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
         return '<button type="button" data-act="seg" data-seg="' + group + '" data-v="' + v + '" class="' + (v === active ? 'on' : '') + '" aria-pressed="' + (v === active) + '">' + (IMPACT[v] ? IMPACT[v].arrow + ' ' : '') + v + '</button>';
       }).join('') + '</div>';
     };
-    return '<div class="formwrap"><h2>뉴스 등록</h2><p class="lede">Claude로 번역·요약한 결과를 붙여넣으면 시트의 해당 월 탭에 저장됩니다.</p>' +
+    const area = function (id, label, h, hint) { return '<div class="fld"><label for="' + id + '">' + label + '</label><textarea class="inp" id="' + id + '" style="min-height:' + h + 'px"></textarea>' + (hint ? '<div class="hint">' + hint + '</div>' : '') + '</div>'; };
+    const text = function (id, label, type) { return '<div class="fld"><label for="' + id + '">' + label + '</label><input class="inp" id="' + id + '" type="' + (type || 'text') + '"></div>'; };
+    return '<div class="formwrap"><h2>뉴스 등록</h2><p class="lede">번역 결과를 통째로 붙여넣으면 제목, 날짜, 핵심 요약, 시사점, 전문 해석을 자동으로 나눠 채웁니다.</p>' +
       (DEMO ? '<div class="msg warn">샘플 모드입니다. 저장은 되지 않고, 화면 구성만 확인할 수 있습니다.</div>' : '') +
       '<div id="formMsg"></div>' +
-      '<section class="box"><h3>1. Claude 결과 한 번에 붙여넣기</h3><p>요청문을 복사해 영어 원문과 함께 Claude에게 보내고, 받은 답변 전체를 아래에 붙여넣으세요.</p>' +
-      '<div class="row" style="margin-bottom:14px"><button type="button" class="btn-line" data-act="copy-prompt">Claude용 요청문 복사</button></div>' +
-      '<div class="fld"><label for="f-paste">Claude 답변</label><textarea class="inp" id="f-paste" style="min-height:160px" placeholder="[한글제목] ... [한줄요약] ... 형식의 답변 전체"></textarea></div>' +
-      '<button type="button" class="btn-line" data-act="fill-paste">아래 칸 자동 채우기</button></section>' +
-      '<section class="box"><h3>2. 기사 정보 확인</h3><p>자동으로 채워진 내용을 확인하고, 비어 있는 칸은 직접 입력하세요.</p>' +
+      '<section class="box"><h3>1. 번역 결과 붙여넣기</h3><p>마켓 브리프 형식의 번역 결과 전체(### 제목 줄부터 전체 내용 끝까지)를 아래에 붙여넣으면 바로 인식합니다.</p>' +
+      '<div class="row" style="margin-bottom:14px"><button type="button" class="btn-line" data-act="copy-prompt">번역 요청문 복사</button></div>' +
+      '<div class="fld"><label for="f-paste">번역 결과</label><textarea class="inp" id="f-paste" style="min-height:200px" placeholder="### [에너지/원자재 마켓 브리프] 제목&#10;* **발행일시**: ...&#10;### 1. 핵심 요약 ..."></textarea></div>' +
+      '<button type="button" class="btn-line" data-act="fill-paste">자동 채우기</button></section>' +
+      '<section class="box"><h3>2. 등록 정보 확인</h3><p>자동으로 채워진 내용을 확인하고, 형식에 없는 가격 영향과 중요도는 직접 고르세요.</p>' +
       '<div class="grid"><div class="fld"><label for="f-date">기사 날짜</label><input class="inp" id="f-date" type="date" value="' + (state.date || todayStr()) + '"></div>' +
       '<div class="fld"><label for="f-source">출처</label><input class="inp" id="f-source" list="srcList" value="' + esc(getPref('source') || 'Platts') + '"><datalist id="srcList"><option value="Platts"><option value="ICIS"><option value="Argus"><option value="기타 매체"></datalist></div></div>' +
-      '<div class="fld"><label for="f-titleEn">영문 제목</label><input class="inp" id="f-titleEn" type="text"></div>' +
-      '<div class="fld"><label for="f-titleKo">한글 제목 (필수)</label><input class="inp" id="f-titleKo" type="text"></div>' +
-      '<div class="fld"><label for="f-url">원문 URL</label><input class="inp" id="f-url" type="url" placeholder="https://"></div>' +
-      '<div class="fld"><div class="lab">품목 태그 (여러 개 선택 가능, 비우면 기타)</div><div class="chips">' + tagChips + '</div></div>' +
+      text('f-titleKo', '한글 제목 (필수)') + text('f-url', '원문 URL (선택)', 'url') +
+      '<div class="fld"><div class="lab">품목 태그 (자동 추정, 여러 개 선택 가능, 비우면 기타)</div><div class="chips">' + tagChips + '</div></div>' +
       '<div class="grid"><div class="fld"><div class="lab">가격 영향</div>' + seg('impact', ['상승', '하락', '중립'], '중립') + '</div>' +
       '<div class="fld"><div class="lab">중요도</div>' + seg('importance', ['높음', '보통', '낮음'], '보통') + '</div></div>' +
-      '<div class="fld"><label for="f-oneLine">한 줄 요약 (필수)</label><textarea class="inp" id="f-oneLine" style="min-height:76px"></textarea></div>' +
-      '<div class="fld"><label for="f-points">핵심 포인트 (필수)</label><textarea class="inp" id="f-points" style="min-height:120px"></textarea><div class="hint">한 줄에 하나씩 입력합니다.</div></div>' +
-      '<div class="fld"><label for="f-bodyKo">전문 해석 (필수)</label><textarea class="inp" id="f-bodyKo" style="min-height:220px"></textarea><div class="hint">문단 사이에 빈 줄을 넣으면 원문 대조 화면에서 문단끼리 짝지어 보입니다.</div></div>' +
-      '<div class="fld"><label for="f-bodyEn">영어 원문 (필수)</label><textarea class="inp" id="f-bodyEn" style="min-height:220px"></textarea><div class="hint">전문 해석과 같은 문단 구분(빈 줄)을 유지하세요.</div></div></section>' +
+      '<details class="adv"><summary>자동 인식한 내용 보기·수정 (선택)</summary>' +
+      area('f-oneLine', '한 줄 요약 (1면 제목 아래 문장)', 76, '첫 번째 핵심 요약의 설명으로 자동 채워집니다.') +
+      area('f-points', '핵심 요약', 150, '한 줄에 하나씩, 제목과 본문은 || 로 구분합니다. (예: 제목||본문)') +
+      area('f-insights', '시사점 및 영향 분석', 150, '형식은 핵심 요약과 같습니다. 없으면 비워 두세요.') +
+      area('f-bodyKo', '전문 해석 (필수)', 260, '소제목은 **굵은 글씨** 한 줄, 문단 사이는 빈 줄, 목록은 * 로 시작합니다.') +
+      '<div class="grid">' + text('f-author', '작성자') + text('f-updated', '최종 업데이트') + '</div>' +
+      text('f-titleEn', '영문 제목') +
+      area('f-bodyEn', '영어 원문 (선택)', 200, '넣으면 기사 화면에 원문 대조 탭이 생깁니다. 전문 해석과 같은 문단 구분(빈 줄)을 유지하세요.') +
+      '</details></section>' +
       '<section class="box"><h3>3. 저장</h3><div class="fld"><label for="f-key">등록 키</label><input class="inp" id="f-key" type="password" autocomplete="off" value="' + esc(getPref('key')) + '" style="max-width:320px"></div>' +
       '<div class="fld"><label style="display:inline-flex;align-items:center;gap:8px;font-weight:500"><input type="checkbox" id="f-remember"' + (getPref('key') ? ' checked' : '') + ' style="width:18px;height:18px"> 이 브라우저에 등록 키 기억</label></div>' +
       '<div class="row"><button type="button" class="btn-solid" data-act="submit">저장하기</button><button type="button" class="btn-line" data-act="reset-form">칸 비우기</button></div></section></div>';
@@ -728,34 +811,123 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
     const seg = function (g) { const b = document.querySelector('#main [data-seg="' + g + '"].on'); return b ? b.dataset.v : ''; };
     return {
       date: fv('f-date'), source: fv('f-source').trim(), titleEn: fv('f-titleEn').trim(), titleKo: fv('f-titleKo').trim(), url: fv('f-url').trim(),
-      tags: tags, impact: seg('impact'), importance: seg('importance'), oneLine: fv('f-oneLine').trim(), points: fv('f-points'),
-      bodyKo: fv('f-bodyKo'), bodyEn: fv('f-bodyEn')
+      tags: tags, impact: seg('impact'), importance: seg('importance'), oneLine: fv('f-oneLine').trim(), points: fv('f-points'), insights: fv('f-insights'),
+      bodyKo: fv('f-bodyKo'), bodyEn: fv('f-bodyEn'), author: fv('f-author').trim(), updatedAt: fv('f-updated').trim()
     };
   }
-  // Claude 답변을 칸별로 나눠 채우기
-  function fillFromPaste() {
-    const text = fv('f-paste');
-    if (!text.trim()) { setMsg('warn', '붙여넣은 내용이 없습니다. Claude 답변 전체를 붙여넣으세요.'); return; }
-    // [제목] 줄을 기준으로 구역 나누기
-    const map = { '한글제목': 'titleKo', '영문제목': 'titleEn', '한줄요약': 'oneLine', '핵심포인트': 'points', '전문해석': 'bodyKo', '가격영향': 'impact', '중요도': 'importance', '품목': 'tags' };
-    const out = {}; let cur = null;
-    text.split(/\r?\n/).forEach(function (line) {
-      const m = line.match(/^\s*\[(한글제목|영문제목|한줄요약|핵심포인트|전문해석|가격영향|중요도|품목|기사 원문)\]\s*(.*)$/);
-      if (m) { cur = map[m[1]] || null; if (cur) out[cur] = m[2] ? [m[2]] : []; }
-      else if (cur) out[cur].push(line);
+
+  // ---------- 마켓 브리프 형식 해석 ----------
+  // 글 속의 ** 표시 제거
+  function stripBold(s) { return String(s || '').replace(/\*\*/g, '').trim(); }
+  // 목록 줄들을 [{head, body}] 로 변환: '* **제목**: 본문' 한 줄형, 또는 제목 줄 아래에 본문이 이어지는 형태 모두 처리
+  function parseItems(lines) {
+    const items = []; let curItem = null;
+    lines.forEach(function (l) {
+      const t = l.trim();
+      if (!t || /^-{3,}$/.test(t)) return;
+      const b = l.match(/^\s*[*-]\s+(.*)$/);
+      if (b) {
+        const inner = b[1].trim();
+        const m = inner.match(/^\*\*(.+?)\*\*\s*[:：]?\s*(.*)$/);
+        curItem = m ? { head: m[1].trim().replace(/[:：]$/, ''), body: m[2].trim() } : { head: '', body: inner };
+        items.push(curItem);
+      } else if (curItem) {
+        curItem.body = (curItem.body ? curItem.body + ' ' : '') + t;
+      }
     });
-    const get = function (k) { return out[k] ? out[k].join('\n').trim() : ''; };
-    const filled = [];
-    if (get('titleKo')) { setFv('f-titleKo', get('titleKo')); filled.push('한글 제목'); }
-    if (get('titleEn')) { setFv('f-titleEn', get('titleEn')); filled.push('영문 제목'); }
-    if (get('oneLine')) { setFv('f-oneLine', get('oneLine')); filled.push('한 줄 요약'); }
-    if (get('points')) { setFv('f-points', get('points').split('\n').map(function (s) { return s.replace(/^\s*(?:[-•·*]|\d+[.)])\s*/, '').trim(); }).filter(Boolean).join('\n')); filled.push('핵심 포인트'); }
-    if (get('bodyKo')) { setFv('f-bodyKo', get('bodyKo')); filled.push('전문 해석'); }
-    if (IMPACT[get('impact')]) { setSeg('impact', get('impact')); filled.push('가격 영향'); }
-    if (RANK[get('importance')] != null) { setSeg('importance', get('importance')); filled.push('중요도'); }
-    if (get('tags')) { setChips(get('tags').split(/[,\s]+/).map(function (t) { return t.trim().toUpperCase(); })); filled.push('품목'); }
-    if (!filled.length) { setMsg('err', '형식을 찾지 못했습니다. [한글제목], [한줄요약] 같은 대괄호 제목 줄이 있는지 확인하세요.'); return; }
-    setMsg('info', filled.join(', ') + ' 칸을 채웠습니다. <b>영문 제목, 원문 URL, 영어 원문</b>은 직접 입력하세요.');
+    return items.map(function (i) { return { head: stripBold(i.head), body: stripBold(i.body) }; });
+  }
+  // 앞뒤의 빈 줄과 --- 구분선 제거
+  function trimSep(lines) {
+    const out = lines.slice();
+    const isSep = function (l) { return !l.trim() || /^-{3,}$/.test(l.trim()); };
+    while (out.length && isSep(out[0])) out.shift();
+    while (out.length && isSep(out[out.length - 1])) out.pop();
+    return out;
+  }
+  // 번역 결과 전체를 해석해 제목, 날짜, 작성자, 핵심 요약, 시사점, 전체 내용으로 나눔
+  function parseBrief(raw) {
+    let lines = String(raw || '').replace(/\r/g, '').split('\n');
+    const out = { title: '', category: '', meta: {}, summary: [], insights: [], full: '', extra: {} };
+    // 맨 끝에 '품목/가격영향/중요도' 줄이 있으면 따로 읽고 본문에서 제외 (없어도 됨)
+    const extraRe = /^\s*[*-]?\s*\**\s*(품목|가격\s*영향|중요도)\s*\**\s*[:：]\s*\**\s*(.+?)\s*\**\s*$/;
+    for (let k = lines.length - 1, seen = 0; k >= 0 && seen < 10; k--) {
+      if (!lines[k].trim()) continue;
+      seen++;
+      const em = lines[k].match(extraRe);
+      if (em) { out.extra[em[1].replace(/\s/g, '')] = stripBold(em[2]); lines.splice(k, 1); }
+    }
+    const secRe = /^\s*#{1,6}\s*\d+\s*[.)]\s*(.+?)\s*$/;
+    // 제목: 번호가 없는 첫 번째 # 제목 줄. 앞의 [분류] 는 따로 보관하고 제목에서는 뺌
+    const tIdx = lines.findIndex(function (l) { return /^\s*#{1,6}\s+\S/.test(l) && !secRe.test(l); });
+    if (tIdx >= 0) {
+      let t = lines[tIdx].replace(/^\s*#{1,6}\s+/, '').trim();
+      const m = t.match(/^\[(.+?)\]\s*(.*)$/);
+      if (m) { out.category = m[1]; t = m[2]; }
+      out.title = stripBold(t);
+    }
+    // 발행일시, 최종 업데이트, 작성자 줄
+    lines.forEach(function (l) {
+      const m = l.match(/^\s*[*-]\s*\*\*\s*(발행일시|최종\s*업데이트|작성자)\s*\*\*\s*[:：]\s*(.+?)\s*$/);
+      if (m) out.meta[m[1].replace(/\s/g, '')] = m[2];
+    });
+    // '### 1. ...' 번호 제목 기준으로 구역을 나눠 이름으로 분류
+    const sections = []; let cur = null;
+    lines.forEach(function (l) {
+      const m = l.match(secRe);
+      if (m) { cur = { name: m[1], lines: [] }; sections.push(cur); } else if (cur) cur.lines.push(l);
+    });
+    sections.forEach(function (sec) {
+      const body = trimSep(sec.lines);
+      if (/전체\s*내용|전문|Full/i.test(sec.name)) out.full = body.join('\n').trim();
+      else if (/시사점|영향/.test(sec.name)) out.insights = parseItems(body);
+      else if (/핵심|요약|Summary/i.test(sec.name)) out.summary = parseItems(body);
+    });
+    return out;
+  }
+  // 본문에서 품목을 추정 (맞는 것이 없으면 기타)
+  function detectTags(text) {
+    const rules = [['SM', /스티렌|styrene|\bSM\b/i], ['AN', /아크릴로니트릴|acrylonitrile|\bAN\b/], ['BD', /부타디엔|butadiene|\bBD\b/i], ['MMA', /\bMMA\b|메틸메타크릴/i], ['BPA', /\bBPA\b|비스페놀/i]];
+    const found = rules.filter(function (r) { return r[1].test(text); }).map(function (r) { return r[0]; });
+    return found.length ? found : ['기타'];
+  }
+  // 번역 결과를 해석해 각 칸에 채우기
+  function fillFromPaste() {
+    const raw = fv('f-paste');
+    if (!raw.trim()) { setMsg('warn', '붙여넣은 내용이 없습니다. 번역 결과 전체를 붙여넣으세요.'); return; }
+    const r = parseBrief(raw);
+    if (!r.title && !r.summary.length && !r.full) { setMsg('err', '형식을 찾지 못했습니다. "### 제목" 줄과 "### 1. 핵심 요약" 같은 번호 제목이 있는지 확인하세요.'); return; }
+    const found = [], missing = [];
+    // 제목
+    if (r.title) { setFv('f-titleKo', r.title); found.push('제목'); } else missing.push('제목');
+    // 발행일시에서 날짜만 뽑아 기사 날짜로
+    const dm = (r.meta['발행일시'] || '').match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (dm) { setFv('f-date', dm[1] + '-' + dm[2] + '-' + dm[3]); found.push('발행일 ' + dm[1] + '-' + dm[2] + '-' + dm[3]); } else missing.push('발행일(기사 날짜를 직접 확인)');
+    if (r.meta['작성자']) { setFv('f-author', r.meta['작성자']); found.push('작성자'); }
+    if (r.meta['최종업데이트']) { setFv('f-updated', r.meta['최종업데이트']); found.push('최종 업데이트'); }
+    // 핵심 요약
+    const toLines = function (list) { return list.map(function (i) { return i.head ? i.head + '||' + i.body : i.body; }).join('\n'); };
+    if (r.summary.length) {
+      setFv('f-points', toLines(r.summary));
+      setFv('f-oneLine', r.summary[0].body || r.summary[0].head);
+      found.push('핵심 요약 ' + r.summary.length + '개');
+    } else missing.push('핵심 요약');
+    // 시사점
+    if (r.insights.length) { setFv('f-insights', toLines(r.insights)); found.push('시사점 ' + r.insights.length + '개'); }
+    // 전체 내용(전문 해석)
+    if (r.full) { setFv('f-bodyKo', r.full); found.push('전문 해석 ' + r.full.length.toLocaleString('ko-KR') + '자'); } else missing.push('전체 내용(전문 해석)');
+    // 출처 추정
+    if (/S&P Global|Platts|플래츠/i.test(raw)) setFv('f-source', 'Platts');
+    // 품목, 가격영향, 중요도: 끝줄에 있으면 그 값, 없으면 품목만 추정
+    const tagText = r.extra['품목'] ? r.extra['품목'].split(/[,\s]+/).map(function (t) { return t.trim().toUpperCase(); }) : detectTags(raw);
+    setChips(tagText.filter(function (t) { return TAGS.indexOf(t) >= 0; }));
+    const tagNote = r.extra['품목'] ? '' : ' (품목 ' + tagText.join(', ') + ' 추정)';
+    if (IMPACT[r.extra['가격영향']]) setSeg('impact', r.extra['가격영향']);
+    if (RANK[r.extra['중요도']] != null) setSeg('importance', r.extra['중요도']);
+    const needPick = [];
+    if (!IMPACT[r.extra['가격영향']]) needPick.push('가격 영향');
+    if (RANK[r.extra['중요도']] == null) needPick.push('중요도');
+    setMsg(missing.length ? 'warn' : 'info', '인식: ' + esc(found.join(', ')) + esc(tagNote) + '.' + (missing.length ? ' <b>찾지 못한 항목:</b> ' + esc(missing.join(', ')) + '.' : '') + (needPick.length ? ' <b>' + needPick.join('과 ') + '</b>는 형식에 없어서 직접 골라 주세요.' : ''));
   }
   // 글자를 클립보드에 복사 (실패하면 선택 방식으로 대체)
   async function copyText(text) {
@@ -771,11 +943,17 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   async function submitForm(force) {
     const f = readForm(); const key = fv('f-key');
     if (!key) { setMsg('err', '등록 키를 입력하세요.'); return; }
-    if (!f.titleKo || !f.oneLine || !f.points.trim() || !fv('f-bodyKo').trim() || !fv('f-bodyEn').trim()) { setMsg('err', '한글 제목, 한 줄 요약, 핵심 포인트, 전문 해석, 영어 원문은 꼭 입력해야 합니다.'); return; }
+    if (!f.titleKo || !f.oneLine || !f.points.trim() || !f.bodyKo.trim()) { setMsg('err', '한글 제목, 한 줄 요약, 핵심 요약, 전문 해석은 꼭 있어야 합니다. 번역 결과를 붙여넣고 자동 채우기를 누르세요.'); return; }
     setMsg('info', '저장하는 중입니다…');
+    // Apps Script 가 예전 코드이면 새 항목이 깨져 저장되므로, 저장 전에 버전을 확인
+    if (!DEMO) {
+      try {
+        const pv = await apiGet({ action: 'ping' });
+        if (!pv.ok || (pv.version || 1) < 2) { setMsg('err', 'Apps Script가 예전 버전입니다. 새 Code.gs로 교체한 뒤 [배포 관리]에서 새 버전으로 다시 배포하세요. (저장하지 않았습니다)'); return; }
+      } catch (e) { setMsg('err', esc(e.message)); return; }
+    }
     const res = await apiPost({ key: key, force: !!force, article: f });
     if (res.ok) {
-      // 기억 설정 반영
       setPref('source', f.source); if ($('#f-remember').checked) setPref('key', key); else setPref('key', '');
       // 이 날짜의 저장본을 지워 다음에 새로 받도록 함
       cacheDel('ed:' + res.date); cacheDel('dates'); state.datesReady = false; state.editionDate = null;
@@ -790,7 +968,7 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   }
   // 칸 비우기 (날짜·출처·등록 키는 유지)
   function resetForm(keepMsg) {
-    ['f-titleEn', 'f-titleKo', 'f-url', 'f-oneLine', 'f-points', 'f-bodyKo', 'f-bodyEn', 'f-paste'].forEach(function (id) { setFv(id, ''); });
+    ['f-titleEn', 'f-titleKo', 'f-url', 'f-oneLine', 'f-points', 'f-insights', 'f-bodyKo', 'f-bodyEn', 'f-author', 'f-updated', 'f-paste'].forEach(function (id) { setFv(id, ''); });
     setChips([]); setSeg('impact', '중립'); setSeg('importance', '보통');
     if (!keepMsg) setMsg('', '');
   }
@@ -834,6 +1012,10 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   });
   $('#q').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { clearTimeout(searchTimer); const q = e.target.value.trim(); if (q.length >= 2) location.hash = '#/s/' + encodeURIComponent(q); }
+  });
+  // 번역 결과 칸에 붙여넣으면 바로 자동 인식
+  document.addEventListener('paste', function (e) {
+    if (e.target && e.target.id === 'f-paste') setTimeout(fillFromPaste, 60);
   });
   // 주소의 # 부분이 바뀌면 화면 이동
   window.addEventListener('hashchange', route);
