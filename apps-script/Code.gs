@@ -7,7 +7,7 @@
 //   GET  ?action=edition&date=YYYY-MM-DD : 그날 한 판(가벼운 정보만)
 //   GET  ?action=article&id=...        : 기사 한 건(전문 해석, 영어 원문 포함)
 //   GET  ?action=search&q=...          : 전체 기간 검색
-//   POST (JSON 본문)                    : 기사 등록 (등록 키 필요)
+//   POST {action:'register'|'auth'|'update', key, ...} : 기사 등록 / 비밀번호 확인 / 분류 수정 (모두 등록 키 필요)
 // 설치: 구글시트 > 확장 프로그램 > Apps Script 에 이 코드를 통째로 붙여넣기
 // =====================================================================
 
@@ -25,7 +25,7 @@ const HEAVY_START_COL = 13;
 // 시트 전체 열의 개수 (A~S열)
 const TOTAL_COLS = 19;
 // 화면과 맞추기 위한 백엔드 버전 (화면이 이 값을 확인해 예전 코드로 저장하는 사고를 막음)
-const API_VERSION = 2;
+const API_VERSION = 3;
 // 셀 하나에 안전하게 넣을 최대 글자 수 (구글시트 한도는 5만 자)
 const CELL_LIMIT = 45000;
 // 월 탭 맨 윗줄에 들어가는 머리글 (순서를 바꾸면 안 됨)
@@ -88,6 +88,10 @@ function doPost(e) {
       // JSON 형식이 아니면 안내문 반환
       return output_(fail_('보낸 내용을 읽을 수 없습니다. 화면을 새로고침한 뒤 다시 시도하세요.', 'BAD_JSON'), e);
     }
+    // 요청 종류: auth(비밀번호 확인), update(분류 수정), 그 외는 기사 등록
+    const action = body.action || 'register';
+    if (action === 'auth') return output_(checkKey_(body.key) || { ok: true, message: '확인되었습니다.' }, e);
+    if (action === 'update') return output_(updateArticle_(body), e);
     // 기사 등록 처리 후 결과 반환
     return output_(registerArticle_(body), e);
   } catch (err) {
@@ -267,14 +271,78 @@ function searchArticles_(q) {
 // ---------------------------------------------------------------------
 // 등록 기능
 // ---------------------------------------------------------------------
-// 기사 한 건을 월 탭에 추가
-function registerArticle_(body) {
+// 등록 키(비밀번호) 확인: 맞으면 null, 틀리면 실패 응답 객체
+function checkKey_(key) {
   // 스크립트 속성에 저장된 등록 키
   const savedKey = PropertiesService.getScriptProperties().getProperty('REGISTER_KEY');
-  // 키가 설정되지 않았으면 등록 불가
+  // 키가 설정되지 않았으면 사용 불가
   if (!savedKey) return fail_('등록 키가 설정되지 않았습니다. Apps Script 프로젝트 설정의 스크립트 속성에 REGISTER_KEY를 추가하세요.', 'NO_KEY');
   // 보낸 키와 비교
-  if (String(body.key || '') !== savedKey) return fail_('등록 키가 올바르지 않습니다.', 'BAD_KEY');
+  if (String(key || '') !== savedKey) return fail_('비밀번호가 올바르지 않습니다.', 'BAD_KEY');
+  return null;
+}
+
+// 기사 한 건의 분류(중요도, 가격영향, 품목 태그)를 수정: 보낸 항목만 바꿈
+function updateArticle_(body) {
+  // 비밀번호 확인
+  const badKey = checkKey_(body.key);
+  if (badKey) return badKey;
+  // 기사 번호 검사
+  const id = String(body.id || '');
+  if (!/^\d{8}-\d{3,}$/.test(id)) return fail_('기사 번호 형식이 올바르지 않습니다.', 'BAD_ID');
+  // 바꿀 값을 검사하며 모음
+  const upd = {};
+  if (body.impact != null) {
+    if (IMPACT_VALUES.indexOf(body.impact) < 0) return fail_('가격영향은 상승, 하락, 중립 중에서 고르세요.', 'INVALID');
+    upd.impact = body.impact;
+  }
+  if (body.importance != null) {
+    if (IMPORTANCE_VALUES.indexOf(body.importance) < 0) return fail_('중요도는 높음, 보통, 낮음 중에서 고르세요.', 'INVALID');
+    upd.importance = body.importance;
+  }
+  if (body.tags != null) upd.tags = normTags_(body.tags);
+  // 바꿀 항목이 하나도 없으면 안내
+  if (!Object.keys(upd).length) return fail_('바꿀 항목이 없습니다.', 'NOTHING');
+  // 동시에 같은 행을 고치지 않도록 잠금
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return fail_('다른 저장이 진행 중입니다. 잠시 후 다시 시도하세요.', 'BUSY');
+  try {
+    // 기사가 있는 월 탭 찾기
+    const sh = openSs_().getSheetByName(id.slice(0, 4) + '-' + id.slice(4, 6));
+    if (!sh || sh.getLastRow() < 2) return fail_('기사를 찾을 수 없습니다.', 'NOT_FOUND');
+    // id 열에서 행 위치 찾기
+    const ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(function (r) { return String(r[0]).trim(); });
+    const idx = ids.indexOf(id);
+    if (idx < 0) return fail_('기사를 찾을 수 없습니다.', 'NOT_FOUND');
+    const rowNo = idx + 2;
+    // 품목 태그(D열), 가격영향(I열), 중요도(J열)만 수정
+    if (upd.tags) sh.getRange(rowNo, 4).setValue(upd.tags.join(','));
+    if (upd.impact) sh.getRange(rowNo, 9).setValue(upd.impact);
+    if (upd.importance) sh.getRange(rowNo, 10).setValue(upd.importance);
+    SpreadsheetApp.flush();
+    // 캐시 버전을 올려 화면에 바로 반영되게 함
+    bumpCacheVer_();
+    return { ok: true, id: id, message: '수정했습니다.' };
+  } finally {
+    // 오류가 나도 잠금은 반드시 해제
+    lock.releaseLock();
+  }
+}
+
+// 품목 태그 입력(배열 또는 쉼표 문자열)을 허용 값만 남겨 정리, 없으면 기타
+function normTags_(raw) {
+  const list = (Array.isArray(raw) ? raw : String(raw || '').split(/[,\s]+/)).map(function (t) { return String(t).trim().toUpperCase(); }).filter(function (t) { return TAG_VALUES.indexOf(t) >= 0; });
+  // 중복 제거
+  const uniq = list.filter(function (t, i) { return list.indexOf(t) === i; });
+  if (!uniq.length) uniq.push('기타');
+  return uniq;
+}
+
+// 기사 한 건을 월 탭에 추가
+function registerArticle_(body) {
+  // 등록 키(비밀번호) 확인
+  const badKey = checkKey_(body.key);
+  if (badKey) return badKey;
   // 보낸 기사 내용을 검사하고 정리
   const checked = normalizeInput_(body.article || {});
   // 문제가 있으면 한글 안내문 반환
@@ -373,11 +441,7 @@ function normalizeInput_(b) {
   const importance = String(b.importance || '').trim();
   if (IMPORTANCE_VALUES.indexOf(importance) < 0) return { error: '중요도는 높음, 보통, 낮음 중에서 고르세요.' };
   // 품목 태그: 허용 값만 남기고, 없으면 기타
-  const tagsRaw = Array.isArray(b.tags) ? b.tags : String(b.tags || '').split(/[,\s]+/);
-  const tags = tagsRaw.map(function (t) { return String(t).trim().toUpperCase(); }).filter(function (t) { return TAG_VALUES.indexOf(t) >= 0; });
-  // 중복 태그 제거 (없으면 기타)
-  const uniqTags = tags.filter(function (t, i) { return tags.indexOf(t) === i; });
-  if (!uniqTags.length) uniqTags.push('기타');
+  const uniqTags = normTags_(b.tags);
   // 원문 URL (선택, 있으면 http로 시작해야 함)
   const url = cut_(b.url, 2000);
   if (url && !/^https?:\/\//i.test(url)) return { error: '원문 URL은 http:// 또는 https:// 로 시작해야 합니다.' };

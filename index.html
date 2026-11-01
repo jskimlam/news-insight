@@ -16,6 +16,7 @@
 /* ---------- 기본 색과 글꼴 ---------- */
 :root{--paper:#F3F0E8;--field:#FBF9F4;--ink:#1A1A1A;--mute:#5A5750;--rule:#CFC9BC;--line:#8A857A;--up:#B4410B;--down:#1D5FA8;--flat:#4A4740;--sans:'Noto Sans KR',system-ui,sans-serif;--serif:'Noto Serif KR','Nanum Myeongjo',serif}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);font-size:15px;line-height:1.6;word-break:keep-all;overflow-wrap:break-word}
 a{color:inherit}
 button{font-family:inherit;cursor:pointer}
@@ -177,6 +178,7 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5A5750" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <input type="search" id="q" placeholder="전체 기간 검색 (두 글자 이상)" autocomplete="off">
       </label>
+      <button type="button" class="btn-line" id="logoutBtn" data-act="logout" hidden>로그아웃</button>
       <a class="btn-solid" href="#/write">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F3F0E8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         새 뉴스 등록
@@ -370,6 +372,15 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   // 단순 값 저장/읽기 (탭 기억, 등록 키 기억 등)
   function setPref(k, v) { try { localStorage.setItem(STORE + 'pref:' + k, v); } catch (e) { /* 무시 */ } }
   function getPref(k) { try { return localStorage.getItem(STORE + 'pref:' + k) || ''; } catch (e) { return ''; } }
+  // ---------- 관리자 로그인 상태 (비밀번호 = 등록 키) ----------
+  // 저장된 비밀번호: 이 탭에서만(sessionStorage) 또는 이 브라우저에 계속(localStorage)
+  function getKey() { try { return sessionStorage.getItem(STORE + 'sess:key') || localStorage.getItem(STORE + 'pref:key') || ''; } catch (e) { return ''; } }
+  // 로그인 성공 시 저장 (keep 이 true 이면 브라우저에 계속 유지)
+  function setKey(key, keep) { try { sessionStorage.setItem(STORE + 'sess:key', key); } catch (e) { /* 무시 */ } setPref('key', keep ? key : ''); }
+  // 로그아웃: 저장된 비밀번호를 모두 지움
+  function clearKey() { try { sessionStorage.removeItem(STORE + 'sess:key'); } catch (e) { /* 무시 */ } setPref('key', ''); }
+  // 관리자 여부 (샘플 모드에서는 화면 확인을 위해 항상 true)
+  function isAdmin() { return DEMO || !!getKey(); }
   // 핵심 요약·시사점을 [{head, body}] 모양으로 통일 (예전 글자 배열도 받아들임)
   function normPts(arr) { return (arr || []).map(function (p) { return typeof p === 'string' ? { head: '', body: p } : { head: p.head || '', body: p.body || '' }; }); }
   // 기사 한 건의 빠진 항목을 기본값으로 채움
@@ -573,6 +584,7 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   // 8. 화면 그리기
   // =====================================================================
   function render() {
+    $('#logoutBtn').hidden = DEMO || !getKey();
     $('#modeNote').textContent = DEMO ? '※ 샘플 모드: API_URL 을 설정하면 구글시트 데이터가 표시됩니다' : '';
     renderDateBar(); renderNav();
     const main = $('#main');
@@ -730,6 +742,17 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
     const pn = (prevA || nextA) ? '<div class="prevnext">' +
       (prevA ? '<a href="#/a/' + encodeURIComponent(prevA.id) + '"><small>← 이전 기사</small>' + esc(prevA.titleKo) + '</a>' : '<span></span>') +
       (nextA ? '<a class="next" href="#/a/' + encodeURIComponent(nextA.id) + '"><small>다음 기사 →</small>' + esc(nextA.titleKo) + '</a>' : '') + '</div>' : '';
+    let adm = '';
+    if (isAdmin()) {
+      const chips = TAGS.map(function (t) { const on = a.tags.indexOf(t) >= 0; return '<button type="button" class="chip' + (on ? ' on' : '') + '" data-act="chip" data-chip="' + t + '" aria-pressed="' + on + '">' + t + '</button>'; }).join('');
+      const sg = function (g, items, active) {
+        return '<div class="seg" role="group">' + items.map(function (v) { return '<button type="button" data-act="seg" data-seg="' + g + '" data-v="' + v + '" class="' + (v === active ? 'on' : '') + '" aria-pressed="' + (v === active) + '">' + (IMPACT[v] ? IMPACT[v].arrow + ' ' : '') + v + '</button>'; }).join('') + '</div>';
+      };
+      adm = '<details class="adv" id="adm" style="margin-top:28px"><summary>분류 수정 (관리자)</summary><div id="editMsg"></div>' +
+        '<div class="fld"><div class="lab">품목 태그</div><div class="chips">' + chips + '</div></div>' +
+        '<div class="grid"><div class="fld"><div class="lab">가격 영향</div>' + sg('impact', ['상승', '하락', '중립'], a.impact) + '</div><div class="fld"><div class="lab">중요도</div>' + sg('importance', ['높음', '보통', '낮음'], a.importance) + '</div></div>' +
+        '<button type="button" class="btn-solid" data-act="save-class">변경 저장</button></details>';
+    }
     const origin = a.url ? '<a class="btn-solid" href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer">원문 확인하기 ↗</a>' : '<span>원문 링크가 등록되지 않았습니다</span>';
     const rail = '<aside class="rail" aria-label="다른 기사"><div class="label" style="padding-bottom:8px;border-bottom:1px solid var(--ink)">' + (others.length ? dots(a.date) + ' 다른 기사' : '다른 기사') + '</div>' +
       (others.length ? others.map(function (x) { return '<div class="item">' + kickerHtml(x, false) + '<a href="#/a/' + encodeURIComponent(x.id) + '">' + esc(x.titleKo) + '</a><div class="meta">' + '<span class="imp ' + impactOf(x).cls + '">' + impactOf(x).arrow + ' ' + impactOf(x).label + '</span></div></div>'; }).join('') : '<div class="item hint">같은 날 다른 기사가 없습니다.</div>') + '</aside>';
@@ -737,7 +760,7 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
       '<h2>' + esc(a.titleKo) + '</h2>' + (a.titleEn ? '<p class="en" style="font-size:16px">' + esc(a.titleEn) + '</p>' : '') +
       '<div class="byline"><span>' + esc(a.source) + '</span>' + (a.author ? '<span>작성자 ' + esc(a.author) + '</span>' : '') + (a.updatedAt ? '<span>최종 업데이트 ' + esc(a.updatedAt) + '</span>' : '') +
       '<span class="imp ' + m.cls + '">' + m.arrow + ' ' + m.label + '</span><span>중요도 ' + esc(a.importance) + '</span></div>' +
-      '<div class="tabs" role="tablist" aria-label="보기 방식">' + tabs + '</div><div class="tabbody">' + body + '</div>' + pn +
+      '<div class="tabs" role="tablist" aria-label="보기 방식">' + tabs + '</div><div class="tabbody">' + body + '</div>' + pn + adm +
       '<div class="foot"><span>AI 번역·요약본입니다. 수치와 고유명사는 원문과 대조해 확인하세요.</span>' + origin + '</div></article>' + rail + '</div>';
   }
 
@@ -752,7 +775,16 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   }
 
   // ---------- 등록 화면 ----------
-  function writeHtml() {
+  // 비밀번호를 묻는 잠금 화면
+  function lockHtml() {
+    return '<div class="formwrap" style="max-width:480px"><h2>관리자 확인</h2><p class="lede">뉴스 등록과 분류 수정은 비밀번호가 필요합니다.</p><div id="lockMsg"></div>' +
+      '<div class="box"><div class="fld"><label for="lock-key">비밀번호</label><input class="inp" id="lock-key" type="password" autocomplete="current-password"></div>' +
+      '<div class="fld"><label style="display:inline-flex;align-items:center;gap:8px;font-weight:500"><input type="checkbox" id="lock-keep" style="width:18px;height:18px"> 이 브라우저에서 계속 유지</label></div>' +
+      '<div class="row"><button type="button" class="btn-solid" data-act="unlock">확인</button></div></div></div>';
+  }
+  // 등록 화면: 로그인 전에는 잠금 화면, 로그인 후에는 입력 폼
+  function writeHtml() { return isAdmin() ? writeFormHtml() : lockHtml(); }
+  function writeFormHtml() {
     const tagChips = TAGS.map(function (t) { return '<button type="button" class="chip" data-act="chip" data-chip="' + t + '" aria-pressed="false">' + t + '</button>'; }).join('');
     const seg = function (group, items, active) {
       return '<div class="seg" role="group">' + items.map(function (v) {
@@ -784,9 +816,7 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
       text('f-titleEn', '영문 제목') +
       area('f-bodyEn', '영어 원문 (선택)', 200, '넣으면 기사 화면에 원문 대조 탭이 생깁니다. 전문 해석과 같은 문단 구분(빈 줄)을 유지하세요.') +
       '</details></section>' +
-      '<section class="box"><h3>3. 저장</h3><div class="fld"><label for="f-key">등록 키</label><input class="inp" id="f-key" type="password" autocomplete="off" value="' + esc(getPref('key')) + '" style="max-width:320px"></div>' +
-      '<div class="fld"><label style="display:inline-flex;align-items:center;gap:8px;font-weight:500"><input type="checkbox" id="f-remember"' + (getPref('key') ? ' checked' : '') + ' style="width:18px;height:18px"> 이 브라우저에 등록 키 기억</label></div>' +
-      '<div class="row"><button type="button" class="btn-solid" data-act="submit">저장하기</button><button type="button" class="btn-line" data-act="reset-form">칸 비우기</button></div></section></div>';
+      '<section class="box"><h3>3. 저장</h3><div class="row"><button type="button" class="btn-solid" data-act="submit">저장하기</button><button type="button" class="btn-line" data-act="reset-form">칸 비우기</button></div></section></div>';
   }
 
   // =====================================================================
@@ -941,8 +971,8 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   }
   // 저장하기
   async function submitForm(force) {
-    const f = readForm(); const key = fv('f-key');
-    if (!key) { setMsg('err', '등록 키를 입력하세요.'); return; }
+    const f = readForm(); const key = getKey();
+    if (!key && !DEMO) { clearKey(); render(); return; }
     if (!f.titleKo || !f.oneLine || !f.points.trim() || !f.bodyKo.trim()) { setMsg('err', '한글 제목, 한 줄 요약, 핵심 요약, 전문 해석은 꼭 있어야 합니다. 번역 결과를 붙여넣고 자동 채우기를 누르세요.'); return; }
     setMsg('info', '저장하는 중입니다…');
     // Apps Script 가 예전 코드이면 새 항목이 깨져 저장되므로, 저장 전에 버전을 확인
@@ -954,19 +984,68 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
     }
     const res = await apiPost({ key: key, force: !!force, article: f });
     if (res.ok) {
-      setPref('source', f.source); if ($('#f-remember').checked) setPref('key', key); else setPref('key', '');
+      setPref('source', f.source);
       // 이 날짜의 저장본을 지워 다음에 새로 받도록 함
       cacheDel('ed:' + res.date); cacheDel('dates'); state.datesReady = false; state.editionDate = null;
       setMsg('ok', '저장했습니다. (' + esc(res.id) + ') <a href="#/a/' + encodeURIComponent(res.id) + '">기사 보기</a> · <a href="#/d/' + res.date + '">' + dots(res.date) + ' 1면 보기</a>');
       resetForm(true);
       window.scrollTo(0, 0);
+    } else if (res.code === 'BAD_KEY') {
+      // 비밀번호가 바뀐 경우: 로그아웃하고 잠금 화면으로
+      clearKey(); render();
+      const lm = $('#lockMsg'); if (lm) lm.innerHTML = '<div class="msg err">비밀번호가 바뀌었습니다. 다시 입력하세요.</div>';
     } else if (res.code === 'DUPLICATE') {
       setMsg('warn', esc(res.message) + ' <button type="button" data-act="force-submit">그래도 저장</button>');
     } else {
       setMsg('err', esc(res.message || '저장하지 못했습니다.'));
     }
   }
-  // 칸 비우기 (날짜·출처·등록 키는 유지)
+  // 잠금 화면에서 비밀번호 확인
+  async function unlock() {
+    const key = fv('lock-key');
+    const msg = function (k, t) { const el = $('#lockMsg'); if (el) el.innerHTML = t ? '<div class="msg ' + k + '">' + t + '</div>' : ''; };
+    if (!key) { msg('err', '비밀번호를 입력하세요.'); return; }
+    msg('info', '확인하는 중입니다…');
+    // Apps Script 가 예전 코드이면 확인 요청을 이해하지 못하므로 버전부터 확인
+    try {
+      const pv = await apiGet({ action: 'ping' });
+      if (!pv.ok || (pv.version || 1) < 3) { msg('err', 'Apps Script가 예전 버전입니다. 새 Code.gs로 교체한 뒤 [배포 관리]에서 새 버전으로 다시 배포하세요.'); return; }
+    } catch (e) { msg('err', esc(e.message)); return; }
+    const res = await apiPost({ action: 'auth', key: key });
+    if (res.ok) { setKey(key, $('#lock-keep').checked); render(); window.scrollTo(0, 0); }
+    else msg('err', esc(res.message || '확인하지 못했습니다.'));
+  }
+  // 기사 화면에서 중요도·가격영향·품목 태그 수정
+  async function saveClass() {
+    const a = state.article; if (!a) return;
+    const tags = Array.prototype.map.call(document.querySelectorAll('#adm [data-chip].on'), function (b) { return b.dataset.chip; });
+    const segv = function (g) { const b = document.querySelector('#adm [data-seg="' + g + '"].on'); return b ? b.dataset.v : ''; };
+    const msg = function (k, t) { const el = $('#editMsg'); if (el) el.innerHTML = t ? '<div class="msg ' + k + '">' + t + '</div>' : ''; };
+    msg('info', '저장하는 중입니다…');
+    if (!DEMO) {
+      try {
+        const pv = await apiGet({ action: 'ping' });
+        if (!pv.ok || (pv.version || 1) < 3) { msg('err', 'Apps Script가 예전 버전입니다. 새 Code.gs로 교체한 뒤 새 버전으로 다시 배포하세요.'); return; }
+      } catch (e) { msg('err', esc(e.message)); return; }
+    }
+    const res = await apiPost({ action: 'update', key: getKey(), id: a.id, impact: segv('impact'), importance: segv('importance'), tags: tags });
+    if (res.ok) {
+      const nt = tags.length ? tags : ['기타'];
+      // 화면 데이터와 저장본에도 바로 반영
+      a.impact = segv('impact'); a.importance = segv('importance'); a.tags = nt;
+      state.edition = state.edition.map(function (x) { return x.id === a.id ? Object.assign({}, x, { impact: a.impact, importance: a.importance, tags: nt }) : x; });
+      cacheDel('ed:' + a.date); cacheDel('ar:' + a.id);
+      render();
+      const d = $('#adm'); if (d) d.open = true;
+      msg('ok', '수정했습니다. 1면 머리기사 순서에 바로 반영됩니다.');
+    } else if (res.code === 'BAD_KEY') {
+      clearKey();
+      msg('err', '비밀번호가 바뀌었습니다. 새 뉴스 등록 화면에서 다시 로그인하세요.');
+    } else {
+      msg('err', esc(res.message || '저장하지 못했습니다.'));
+    }
+  }
+  // 칸 비우기 (날짜·출처는 유지)
   function resetForm(keepMsg) {
     ['f-titleEn', 'f-titleKo', 'f-url', 'f-oneLine', 'f-points', 'f-insights', 'f-bodyKo', 'f-bodyEn', 'f-author', 'f-updated', 'f-paste'].forEach(function (id) { setFv(id, ''); });
     setChips([]); setSeg('impact', '중립'); setSeg('importance', '보통');
@@ -995,6 +1074,9 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
     else if (act === 'submit') { submitForm(false); }
     else if (act === 'force-submit') { submitForm(true); }
     else if (act === 'reset-form') { resetForm(false); }
+    else if (act === 'unlock') { unlock(); }
+    else if (act === 'logout') { clearKey(); render(); }
+    else if (act === 'save-class') { saveClass(); }
   });
   // 날짜 선택칸
   document.addEventListener('change', function (e) {
@@ -1012,6 +1094,10 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   });
   $('#q').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { clearTimeout(searchTimer); const q = e.target.value.trim(); if (q.length >= 2) location.hash = '#/s/' + encodeURIComponent(q); }
+  });
+  // 잠금 화면에서 엔터를 누르면 확인
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && e.target && e.target.id === 'lock-key') unlock();
   });
   // 번역 결과 칸에 붙여넣으면 바로 자동 인식
   document.addEventListener('paste', function (e) {
