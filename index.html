@@ -842,7 +842,7 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
       '<button type="button" class="btn-line" data-act="fill-paste">자동 채우기</button></section>' +
       '<section class="box"><h3>2. 등록 정보 확인</h3><p>자동으로 채워진 내용을 확인하고, 형식에 없는 가격 영향과 중요도는 직접 고르세요.</p>' +
       '<div class="grid"><div class="fld"><label for="f-date">기사 날짜</label><input class="inp" id="f-date" type="date" value="' + (state.date || todayStr()) + '"></div>' +
-      '<div class="fld"><label for="f-source">출처</label><input class="inp" id="f-source" list="srcList" value="' + esc(getPref('source') || 'Platts') + '"><datalist id="srcList"><option value="Platts"><option value="ICIS"><option value="Argus"><option value="기타 매체"></datalist></div></div>' +
+      '<div class="fld"><label for="f-source">출처</label><input class="inp" id="f-source" placeholder="자동 인식 또는 직접 입력" list="srcList" value="' + esc('') + '"><datalist id="srcList"><option value="Platts"><option value="ICIS"><option value="Argus"><option value="기타 매체"></datalist></div></div>' +
       text('f-titleKo', '한글 제목 (필수)') + text('f-url', '원문 URL (선택)', 'url') +
       '<div class="fld"><div class="lab">품목 태그 (자동 추정, 여러 개 선택 가능, 비우면 기타)</div><div class="chips">' + tagChips + '</div></div>' +
       '<div class="grid"><div class="fld"><div class="lab">가격 영향</div>' + seg('impact', ['상승', '하락', '중립'], '중립') + '</div>' +
@@ -891,21 +891,19 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   function stripBold(s) { return String(s || '').replace(/\*\*/g, '').trim(); }
   // 목록 줄들을 [{head, body}] 로 변환: '* **제목**: 본문' 한 줄형, 또는 제목 줄 아래에 본문이 이어지는 형태 모두 처리
   function parseItems(lines) {
-    const items = []; let curItem = null;
-    lines.forEach(function (l) {
-      const t = l.trim();
-      if (!t || /^-{3,}$/.test(t)) return;
-      const b = l.match(/^\s*[*-]\s+(.*)$/);
-      if (b) {
-        const inner = b[1].trim();
-        const m = inner.match(/^\*\*(.+?)\*\*\s*[:：]?\s*(.*)$/);
-        curItem = m ? { head: m[1].trim().replace(/[:：]$/, ''), body: m[2].trim() } : { head: '', body: inner };
-        items.push(curItem);
-      } else if (curItem) {
-        curItem.body = (curItem.body ? curItem.body + ' ' : '') + t;
-      }
+    const items = []; let current = null;
+    lines.forEach(function (line) {
+      const t = line.trim();
+      if (!t || /^-{3,}$/.test(t)) { current = null; return; }
+      const bullet = t.match(/^(?:[*•●▪-]|\d+[.)])\s+(.+)$/);
+      if (bullet || !current) {
+        const text = stripBold(bullet ? bullet[1] : t);
+        const pair = text.match(/^([^:：]{1,100})[:：]\s*(.*)$/);
+        current = pair ? { head: pair[1].trim(), body: pair[2].trim() } : { head: '', body: text };
+        items.push(current);
+      } else current.body += (current.body ? ' ' : '') + stripBold(t);
     });
-    return items.map(function (i) { return { head: stripBold(i.head), body: stripBold(i.body) }; });
+    return items;
   }
   // 앞뒤의 빈 줄과 --- 구분선 제거
   function trimSep(lines) {
@@ -917,43 +915,51 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   }
   // 번역 결과 전체를 해석해 제목, 날짜, 작성자, 핵심 요약, 시사점, 전체 내용으로 나눔
   function parseBrief(raw) {
-    let lines = String(raw || '').replace(/\r/g, '').split('\n');
+    const lines = String(raw || '').replace(/\r/g, '').split('\n');
     const out = { title: '', category: '', meta: {}, summary: [], insights: [], full: '', extra: {} };
-    // 맨 끝에 '품목/가격영향/중요도' 줄이 있으면 따로 읽고 본문에서 제외 (없어도 됨)
-    const extraRe = /^\s*[*-]?\s*\**\s*(품목|가격\s*영향|중요도)\s*\**\s*[:：]\s*\**\s*(.+?)\s*\**\s*$/;
+    const clean = function (l) { return stripBold(l).replace(/^#{1,6}\s*/, '').trim(); };
+    const metaRe = /^(?:[*•●▪-]\s*)?(발행일시|최종\s*업데이트|작성자|출처|매체|Source|Publisher)\s*[:：]\s*(.+)$/i;
+    const section = function (l) {
+      const t = clean(l).replace(/^\d+\s*[.)]\s*/, '');
+      if (/^(?:핵심\s*요약|요약|Executive Summary|Summary)(?:\s*\([^)]*\))?\s*[:：]?$/.test(t)) return 'summary';
+      if (/^(?:시사점(?:\s*및\s*영향\s*분석)?|영향\s*분석|Key Takeaways)(?:\s*\([^)]*\))?\s*[:：]?$/.test(t)) return 'insights';
+      if (/^(?:전체\s*내용|전문(?:\s*해석)?|Full Translation)(?:\s*\([^)]*\))?\s*[:：]?$/.test(t)) return 'full';
+      return '';
+    };
+    const extraRe = /^(?:[*•●▪-]\s*)?(품목|가격\s*영향|중요도)\s*[:：]\s*(.+)$/;
     for (let k = lines.length - 1, seen = 0; k >= 0 && seen < 10; k--) {
       if (!lines[k].trim()) continue;
       seen++;
-      const em = lines[k].match(extraRe);
-      if (em) { out.extra[em[1].replace(/\s/g, '')] = stripBold(em[2]); lines.splice(k, 1); }
+      const m = clean(lines[k]).match(extraRe);
+      if (m) { out.extra[m[1].replace(/\s/g, '')] = m[2]; lines.splice(k, 1); }
     }
-    const secRe = /^\s*#{1,6}\s*\d+\s*[.)]\s*(.+?)\s*$/;
-    // 제목: 번호가 없는 첫 번째 # 제목 줄. 앞의 [분류] 는 따로 보관하고 제목에서는 뺌
-    const tIdx = lines.findIndex(function (l) { return /^\s*#{1,6}\s+\S/.test(l) && !secRe.test(l); });
-    if (tIdx >= 0) {
-      let t = lines[tIdx].replace(/^\s*#{1,6}\s+/, '').trim();
-      const m = t.match(/^\[(.+?)\]\s*(.*)$/);
-      if (m) { out.category = m[1]; t = m[2]; }
-      out.title = stripBold(t);
-    }
-    // 발행일시, 최종 업데이트, 작성자 줄
-    lines.forEach(function (l) {
-      const m = l.match(/^\s*[*-]\s*\*\*\s*(발행일시|최종\s*업데이트|작성자)\s*\*\*\s*[:：]\s*(.+?)\s*$/);
-      if (m) out.meta[m[1].replace(/\s/g, '')] = m[2];
+    const sections = { summary: [], insights: [], full: [] }; let current = '';
+    lines.forEach(function (line) {
+      const t = clean(line); const sec = section(line);
+      if (sec) { current = sec; return; }
+      // Metadata is read only before the article sections, never from quoted body text.
+      if (!current) {
+        const m = t.match(metaRe);
+        if (m) { out.meta[/^(출처|매체|Source|Publisher)$/i.test(m[1]) ? '출처' : m[1].replace(/\s/g, '')] = m[2]; return; }
+        if (!out.title && t && !/^[-`]{3,}/.test(t)) {
+          const title = t.match(/^\[(.+?)\]\s*(.*)$/);
+          out.category = title ? title[1] : ''; out.title = title ? title[2] : t;
+        }
+      } else sections[current].push(line);
     });
-    // '### 1. ...' 번호 제목 기준으로 구역을 나눠 이름으로 분류
-    const sections = []; let cur = null;
-    lines.forEach(function (l) {
-      const m = l.match(secRe);
-      if (m) { cur = { name: m[1], lines: [] }; sections.push(cur); } else if (cur) cur.lines.push(l);
-    });
-    sections.forEach(function (sec) {
-      const body = trimSep(sec.lines);
-      if (/전체\s*내용|전문|Full/i.test(sec.name)) out.full = body.join('\n').trim();
-      else if (/시사점|영향/.test(sec.name)) out.insights = parseItems(body);
-      else if (/핵심|요약|Summary/i.test(sec.name)) out.summary = parseItems(body);
-    });
+    out.summary = parseItems(trimSep(sections.summary));
+    out.insights = parseItems(trimSep(sections.insights));
+    out.full = trimSep(sections.full).join('\n');
     return out;
+  }
+  // Explicit source takes priority. Infer only from title/author, not publishers mentioned in the body.
+  function detectSource(brief) {
+    const rules = [['ICIS', /\bICIS\b|아이시스/i], ['Platts', /\bPlatts\b|S\s*&\s*P Global|플래츠/i], ['Argus', /\bArgus\b|아르거스/i], ['Reuters', /\bReuters\b|로이터/i], ['Bloomberg', /\bBloomberg\b|블룸버그/i], ['연합뉴스', /연합뉴스|\bYonhap\b/i]];
+    const explicit = brief.meta['출처'];
+    const text = explicit || [brief.title, brief.category, brief.meta['작성자'] || ''].join(' ');
+    const found = rules.filter(function (rule) { return rule[1].test(text); });
+    if (explicit) return found.length === 1 ? found[0][0] : explicit;
+    return found.length === 1 ? found[0][0] : '';
   }
   // 본문에서 품목을 추정 (맞는 것이 없으면 기타)
   function detectTags(text) {
@@ -966,7 +972,7 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
     const raw = fv('f-paste');
     if (!raw.trim()) { setMsg('warn', '붙여넣은 내용이 없습니다. 번역 결과 전체를 붙여넣으세요.'); return; }
     const r = parseBrief(raw);
-    if (!r.title && !r.summary.length && !r.full) { setMsg('err', '형식을 찾지 못했습니다. "### 제목" 줄과 "### 1. 핵심 요약" 같은 번호 제목이 있는지 확인하세요.'); return; }
+    if (!r.title && !r.summary.length && !r.full) { setMsg('err', '내용을 찾지 못했습니다. 제목, 핵심 요약, 전체 내용이 있는지 확인하세요.'); return; }
     const found = [], missing = [];
     // 제목
     if (r.title) { setFv('f-titleKo', r.title); found.push('제목'); } else missing.push('제목');
@@ -987,7 +993,9 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
     // 전체 내용(전문 해석)
     if (r.full) { setFv('f-bodyKo', r.full); found.push('전문 해석 ' + r.full.length.toLocaleString('ko-KR') + '자'); } else missing.push('전체 내용(전문 해석)');
     // 출처 추정
-    if (/S&P Global|Platts|플래츠/i.test(raw)) setFv('f-source', 'Platts');
+    const source = detectSource(r);
+    setFv('f-source', source);
+    if (source) found.push('출처 ' + source); else missing.push('출처(직접 입력)');
     // 품목, 가격영향, 중요도: 끝줄에 있으면 그 값, 없으면 품목만 추정
     const tagText = r.extra['품목'] ? r.extra['품목'].split(/[,\s]+/).map(function (t) { return t.trim().toUpperCase(); }) : detectTags(raw);
     setChips(tagText.filter(function (t) { return TAGS.indexOf(t) >= 0; }));
