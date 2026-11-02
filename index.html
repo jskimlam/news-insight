@@ -593,9 +593,9 @@ input,textarea,select{max-width:100%}
   // 읽기 요청
   async function apiGet(params) {
     if (DEMO) return normRes(await demoGet(params));
-    const url = API_URL + (API_URL.indexOf('?') >= 0 ? '&' : '?') + new URLSearchParams(params).toString();
+    const url = API_URL + (API_URL.indexOf('?') >= 0 ? '&' : '?') + new URLSearchParams(Object.assign({}, params, { _ts: Date.now() + '-' + Math.random().toString(36).slice(2) })).toString();
     let res;
-    try { res = await fetch(url, { method: 'GET', redirect: 'follow' }); }
+    try { res = await fetch(url, { method: 'GET', redirect: 'follow', cache: 'no-store' }); }
     catch (e) {
       // 브라우저가 fetch 를 막는 경우(CORS)에는 스크립트 태그 방식(JSONP)으로 한 번 더 시도
       try { return normRes(await jsonp(url)); }
@@ -640,11 +640,8 @@ input,textarea,select{max-width:100%}
   // =====================================================================
   // 6. 데이터 불러오기
   // =====================================================================
-  // 날짜 목록 불러오기 (브라우저 저장본이 있으면 먼저 쓰고, 뒤에서 갱신)
+  // 날짜 목록은 매 조회마다 서버에서 확인해 새 날짜와 기사 수를 반영한다.
   async function ensureDates(force) {
-    if (state.datesReady && !force) return;
-    const cached = force ? null : cacheRead('dates', TTL_FRESH);
-    if (cached) { state.dates = cached; state.datesReady = true; return; }
     const res = await apiGet({ action: 'dates' });
     if (!res.ok) throw new Error(res.message || '날짜 목록을 불러오지 못했습니다.');
     state.dates = res.dates; state.datesReady = true;
@@ -654,16 +651,15 @@ input,textarea,select{max-width:100%}
   async function loadEdition(date, force, myTicket) {
     const key = 'ed:' + date;
     const isPast = date < todayStr();
-    // 지난 호는 오래 보관, 오늘 호는 일단 저장본을 보여 주고 곧바로 새로 받아 확인
+    // 저장본은 빠른 표시용으로만 쓰고 지난 날짜도 반드시 서버에서 다시 확인한다.
     const cached = force ? null : cacheRead(key, isPast ? TTL_PAST : 24 * 3600 * 1000);
     if (cached) {
       state.edition = cached.map(normArticle); state.editionDate = date;
       if (myTicket === ticket) render();
-      if (isPast) return;
     }
     const res = await apiGet({ action: 'edition', date: date });
     if (myTicket !== ticket) return;
-    if (!res.ok) { if (!cached) throw new Error(res.message || '기사를 불러오지 못했습니다.'); return; }
+    if (!res.ok) throw new Error(res.message || '기사를 불러오지 못했습니다.');
     state.edition = res.articles; state.editionDate = date;
     cacheWrite(key, res.articles);
   }
