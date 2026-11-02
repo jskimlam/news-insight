@@ -205,6 +205,76 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
   .prevnext a.next{text-align:left}
   .foot .btn-solid{width:100%;justify-content:center}
 }
+/* Responsive reading: cover / unfolded / desktop; no fixed device detection. */
+html{text-size-adjust:100%;-webkit-text-size-adjust:100%}
+.masthead h1{font-size:clamp(25px,4.5vw,58px)}
+.lead .hl{font-size:clamp(21px,2.8vw,38px)}
+.article h2{font-size:clamp(22px,3vw,40px)}
+.pull{font-size:clamp(17px,1.9vw,24px)}
+.search-headline{font-size:clamp(18px,2.1vw,22px)}
+.strip .right,.datetools,.datetools label,.grid>*{min-width:0}
+input,textarea,select{max-width:100%}
+.cols,.pair p,.bigpoints span,.points span{overflow-wrap:anywhere}
+@media (max-width:959px){
+  .wrap{padding-inline:clamp(12px,2.6vw,24px)}
+  .masthead{padding:16px 0 12px}
+  .masthead h1{margin:6px 0;line-height:1.25}
+  .lead .deck{font-size:1rem;line-height:1.7;margin-top:12px}
+  .side .hl{font-size:1.2rem}
+  .rest .hl{font-size:1.13rem}
+  .points{margin-top:16px}
+  .points li{gap:10px;padding:10px 0}
+  .article h2{line-height:1.4;text-wrap:pretty}
+  .tabbody{padding-top:20px}
+  .pull{margin-bottom:24px;line-height:1.65}
+  .cols p,.md li{font-size:1rem;line-height:1.8}
+  .bigpoints span,.bigpoints strong{font-size:.9688rem;line-height:1.75}
+  .bigpoints li{gap:12px;padding:12px 0}
+  .bigpoints b{font-size:1.3rem;width:22px}
+  .rest{gap:22px;margin-top:24px;padding-top:20px}
+  .rail{margin-top:24px}
+  .byline{gap:6px 12px;margin-top:14px}
+}
+/* Fold main screen: keep full articles continuous; use width for story lists. */
+@media (min-width:600px) and (max-width:959px){
+  .side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px}
+  .side .sidestory{min-width:0}
+  .side .sidestory:only-child{grid-column:1/-1}
+  .rest{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cols{max-width:44em}
+  .strip .right{flex:1;justify-content:flex-end}
+  .search{width:clamp(190px,30vw,260px)}
+}
+/* Cover, ordinary phone, and narrow split-screen windows. */
+@media (max-width:599px){
+  .strip{gap:6px;padding:6px 0}
+  .strip .right{width:100%;gap:8px}
+  .search{flex:1 1 160px;width:auto}
+  .strip .btn-solid,.strip .btn-line{padding-inline:10px;white-space:nowrap}
+  .masthead .eyebrow{letter-spacing:.18em}
+  .masthead .sub{font-size:.75rem}
+  .datetitle{font-size:1.15rem}
+  .datebar{gap:6px 8px;padding:8px 0}
+  .datecenter{width:100%;min-width:0;order:-1}
+  .datetools{width:100%;gap:6px;justify-content:center}
+  .datebar button,.datebar .pill{padding-inline:10px}
+  .navbtn{padding-inline:10px;font-size:.8438rem}
+  .navright{width:100%;margin-left:0;border-top:1px solid var(--rule)}
+  .navright .navbtn{padding-inline:9px}
+  main{padding-top:16px}
+  .side{margin-top:20px;padding-top:18px}
+  .sidestory{padding-bottom:16px;margin-bottom:16px}
+  .rest{grid-template-columns:minmax(0,1fr)}
+  .tab{padding-inline:10px;font-size:.8438rem}
+  .pairhead,.pair{gap:16px}
+  .pair p{line-height:1.8}
+  .box{padding:14px;margin-bottom:20px}
+  .formwrap h2{font-size:1.35rem}
+  .grid{gap:12px}
+  .fld{margin-bottom:16px}
+  .seg button,.chip{padding-inline:12px}
+}
+
 </style>
 </head>
 <body>
@@ -810,7 +880,7 @@ textarea.inp{padding:12px;line-height:1.7;resize:vertical;min-height:120px}
     if (!state.results.length) return emptyHtml('검색 결과가 없습니다', '다른 키워드로 검색해 보세요.');
     return '<div class="label" style="padding-bottom:8px;border-bottom:1px solid var(--ink)">‘' + esc(state.query) + '’ 검색 결과 ' + state.results.length + '건 (전체 기간, 최신순)</div>' +
       state.results.map(function (a) {
-        return '<article style="padding:20px 0;border-bottom:1px solid var(--rule)">' + kickerHtml(a, true) + '<h3 class="hl" style="font-size:1.375rem">' + linkHtml(a) + '</h3><p class="deck">' + esc(a.oneLine) + '</p>' + metaHtml(a, true) + '</article>';
+        return '<article style="padding:20px 0;border-bottom:1px solid var(--rule)">' + kickerHtml(a, true) + '<h3 class="hl search-headline">' + linkHtml(a) + '</h3><p class="deck">' + esc(a.oneLine) + '</p>' + metaHtml(a, true) + '</article>';
       }).join('');
   }
 
