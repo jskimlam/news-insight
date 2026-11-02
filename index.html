@@ -275,6 +275,12 @@ input,textarea,select{max-width:100%}
   .seg button,.chip{padding-inline:12px}
 }
 
+.link-status{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);max-width:calc(100% - 24px);width:max-content;padding:12px 18px;background:var(--ink);color:var(--paper);font-family:var(--sans);font-size:.875rem;z-index:1000;box-shadow:0 3px 14px #0003}
+.link-dialog{width:min(480px,calc(100% - 24px));max-height:85vh;overflow:auto;padding:20px;background:var(--paper);color:var(--ink);border:1px solid var(--ink);font-family:var(--sans)}
+.link-dialog::backdrop{background:#0006}
+.link-dialog h2{font-size:1.2rem;margin-top:0}
+.link-dialog p,.link-dialog label{font-size:.875rem}
+.link-dialog input{margin:8px 0 16px}
 </style>
 </head>
 <body>
@@ -288,6 +294,7 @@ input,textarea,select{max-width:100%}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5A5750" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <input type="search" id="q" placeholder="전체 기간 검색 (두 글자 이상)" autocomplete="off">
       </label>
+      <button type="button" class="btn-line" id="copyLinkBtn" data-act="copy-link">링크 복사</button>
       <button type="button" class="btn-line" id="logoutBtn" data-act="logout" hidden>로그아웃</button>
       <a class="btn-solid" href="#/write">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F3F0E8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -305,6 +312,14 @@ input,textarea,select{max-width:100%}
   <div id="dateBar"></div>
   <nav id="nav" aria-label="품목과 가격 영향"></nav>
   <main id="main"></main>
+  <div id="linkStatus" class="link-status" role="status" aria-live="polite" hidden></div>
+  <dialog id="linkDialog" class="link-dialog" aria-labelledby="linkDialogTitle">
+    <h2 id="linkDialogTitle">페이지 링크</h2>
+    <p>자동 복사가 지원되지 않습니다. 아래 주소를 길게 눌러 복사하세요.</p>
+    <label for="shareLink">현재 페이지 주소</label>
+    <input id="shareLink" class="inp" readonly>
+    <button type="button" class="btn-line" data-act="close-link">닫기</button>
+  </dialog>
 </div>
 
 <script>
@@ -1087,6 +1102,28 @@ input,textarea,select{max-width:100%}
       document.body.removeChild(ta); return ok;
     }
   }
+  // Canonical public URL: keep the current route, exclude WebView/cache query parameters.
+  let linkStatusTimer;
+  async function copyPageLink() {
+    const url = 'https://jskimlam.github.io/news-insight/' + (location.hash || '#/');
+    const button = $('#copyLinkBtn');
+    button.disabled = true;
+    const ok = await copyText(url);
+    button.disabled = false;
+    const status = $('#linkStatus');
+    clearTimeout(linkStatusTimer);
+    if (ok) {
+      status.textContent = '현재 페이지 링크를 복사했습니다.';
+      status.hidden = false;
+      linkStatusTimer = setTimeout(function () { status.hidden = true; }, 3000);
+    } else {
+      status.hidden = true;
+      const input = $('#shareLink'), dialog = $('#linkDialog');
+      input.value = url;
+      if (!dialog.open) dialog.showModal();
+      input.focus(); input.select();
+    }
+  }
   // 저장하기
   async function submitForm(force) {
     const f = readForm(); const key = getKey();
@@ -1178,7 +1215,9 @@ input,textarea,select{max-width:100%}
     if (!t) return;
     const act = t.dataset.act, v = t.dataset.v;
     const ds = state.dates.map(function (d) { return d.date; });
-    if (act === 'tag') { state.tag = v; render(); }
+    if (act === 'copy-link') { copyPageLink(); }
+    else if (act === 'close-link') { $('#linkDialog').close(); $('#copyLinkBtn').focus(); }
+    else if (act === 'tag') { state.tag = v; render(); }
     else if (act === 'impact') { state.impact = v; render(); }
     else if (act === 'prev') { const p = ds.filter(function (d) { return d < state.date; }).pop(); if (p) location.hash = '#/d/' + p; }
     else if (act === 'next') { const n = ds.find(function (d) { return d > state.date; }); if (n) location.hash = '#/d/' + n; }
