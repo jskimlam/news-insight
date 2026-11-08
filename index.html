@@ -398,6 +398,8 @@ input,textarea,select{max-width:100%}
     '* **발행일시**: (원문의 발행일시)',
     '* **최종 업데이트**: (원문의 최종 업데이트 일시)',
     '* **작성자**: (원문의 작성자)',
+    '* **출처**: (Platts 또는 ICIS 등 실제 발행처)',
+    '* **원문 첫 문장**: (제목·기자명·메뉴를 제외한 첫 본문 문장을 영어 그대로 복사. 숫자·단위·문장부호 유지)',
     '',
     '---',
     '',
@@ -958,6 +960,7 @@ input,textarea,select{max-width:100%}
       (DEMO ? '<div class="msg warn">샘플 모드입니다. 저장은 되지 않고, 화면 구성만 확인할 수 있습니다.</div>' : '') +
       '<div id="formMsg"></div>' +
       '<section class="box"><h3>1. 번역 결과 붙여넣기</h3><p>마켓 브리프 형식의 번역 결과 전체(### 제목 줄부터 전체 내용 끝까지)를 아래에 붙여넣으면 바로 인식합니다.</p>' +
+      area('f-original-input','번역할 영어 원문',140,'영문 기사를 여기에 붙여 넣고 번역 요청문을 복사하세요.') +
       '<div class="row" style="margin-bottom:14px"><button type="button" class="btn-line" data-act="copy-prompt">번역 요청문 복사</button></div>' +
       '<div class="fld"><label for="f-paste">번역 결과</label><textarea class="inp" id="f-paste" style="min-height:200px" placeholder="### [에너지/원자재 마켓 브리프] 제목&#10;* **발행일시**: ...&#10;### 1. 핵심 요약 ..."></textarea></div>' +
       '<button type="button" class="btn-line" data-act="fill-paste">자동 채우기</button></section>' +
@@ -975,6 +978,7 @@ input,textarea,select{max-width:100%}
       area('f-bodyKo', '전문 해석 (필수)', 260, '소제목은 **굵은 글씨** 한 줄, 문단 사이는 빈 줄, 목록은 * 로 시작합니다.') +
       '<div class="grid">' + text('f-author', '작성자') + text('f-updated', '최종 업데이트') + '</div>' +
       text('f-titleEn', '영문 제목') +
+      area('f-lead', '원문 첫 문장 (중복 확인용)', 70, '번역 결과에서 자동으로 채웁니다. URL 없이 같은 출처·발행일의 기사를 비교합니다.') +
       area('f-bodyEn', '영어 원문 (선택)', 200, '넣으면 기사 화면에 원문 대조 탭이 생깁니다. 전문 해석과 같은 문단 구분(빈 줄)을 유지하세요.') +
       '</details></section>' +
       '<section class="box"><h3>3. 저장</h3><div class="row"><button type="button" class="btn-solid" data-act="submit">저장하기</button><button type="button" class="btn-line" data-act="reset-form">칸 비우기</button></div></section></div>';
@@ -1003,7 +1007,7 @@ input,textarea,select{max-width:100%}
     return {
       date: fv('f-date'), source: fv('f-source').trim(), titleEn: fv('f-titleEn').trim(), titleKo: fv('f-titleKo').trim(), url: fv('f-url').trim(),
       tags: tags, impact: seg('impact'), importance: seg('importance'), oneLine: fv('f-oneLine').trim(), points: fv('f-points'), insights: fv('f-insights'),
-      bodyKo: fv('f-bodyKo'), bodyEn: fv('f-bodyEn'), author: fv('f-author').trim(), updatedAt: fv('f-updated').trim()
+      leadText: fv('f-lead').trim(), bodyKo: fv('f-bodyKo'), bodyEn: fv('f-bodyEn'), author: fv('f-author').trim(), updatedAt: fv('f-updated').trim()
     };
   }
 
@@ -1039,7 +1043,7 @@ input,textarea,select{max-width:100%}
     const lines = String(raw || '').replace(/\r/g, '').split('\n');
     const out = { title: '', category: '', meta: {}, summary: [], insights: [], full: '', extra: {} };
     const clean = function (l) { return stripBold(l).replace(/^#{1,6}\s*/, '').trim(); };
-    const metaRe = /^(?:[*•●▪-]\s*)?(발행일시|최종\s*업데이트|작성자|출처|매체|Source|Publisher)\s*[:：]\s*(.+)$/i;
+    const metaRe = /^(?:[*•●▪-]\s*)?(발행일시|최종\s*업데이트|작성자|원문\s*첫\s*문장|출처|매체|Source|Publisher)\s*[:：]\s*(.+)$/i;
     const section = function (l) {
       const t = clean(l).replace(/^\d+\s*[.)]\s*/, '');
       if (/^(?:핵심\s*요약|요약|Executive Summary|Summary)(?:\s*\([^)]*\))?\s*[:：]?$/.test(t)) return 'summary';
@@ -1100,6 +1104,8 @@ input,textarea,select{max-width:100%}
     // 발행일시에서 날짜만 뽑아 기사 날짜로
     const dm = (r.meta['발행일시'] || '').match(/(\d{4})-(\d{2})-(\d{2})/);
     if (dm) { setFv('f-date', dm[1] + '-' + dm[2] + '-' + dm[3]); found.push('발행일 ' + dm[1] + '-' + dm[2] + '-' + dm[3]); } else missing.push('발행일(기사 날짜를 직접 확인)');
+    setFv('f-lead',r.meta['원문첫문장'] || '');
+    if (r.meta['원문첫문장']) found.push('중복 확인용 원문 첫 문장');
     if (r.meta['작성자']) { setFv('f-author', r.meta['작성자']); found.push('작성자'); }
     if (r.meta['최종업데이트']) { setFv('f-updated', r.meta['최종업데이트']); found.push('최종 업데이트'); }
     // 핵심 요약
@@ -1165,12 +1171,13 @@ input,textarea,select{max-width:100%}
     const f = readForm(); const key = getKey();
     if (!key && !DEMO) { clearKey(); render(); return; }
     if (!f.titleKo || !f.oneLine || !f.points.trim() || !f.bodyKo.trim()) { setMsg('err', '한글 제목, 한 줄 요약, 핵심 요약, 전문 해석은 꼭 있어야 합니다. 번역 결과를 붙여넣고 자동 채우기를 누르세요.'); return; }
+    if ((fv('f-original-input').trim() || f.leadText) && (!f.source || (!f.leadText && !f.bodyEn))) { setMsg('warn','출처와 첫 본문 문장을 확인해 주세요. 등록 정보의 수정란에서 원문 첫 문장을 입력할 수 있습니다.'); return; }
     setMsg('info', '저장하는 중입니다…');
     // Apps Script 가 예전 코드이면 새 항목이 깨져 저장되므로, 저장 전에 버전을 확인
     if (!DEMO) {
       try {
         const pv = await apiGet({ action: 'ping' });
-        if (!pv.ok || (pv.version || 1) < 2) { setMsg('err', 'Apps Script가 예전 버전입니다. 새 Code.gs로 교체한 뒤 [배포 관리]에서 새 버전으로 다시 배포하세요. (저장하지 않았습니다)'); return; }
+        if (!pv.ok || (pv.version || 1) < (f.leadText || f.bodyEn ? 5 : 2)) { setMsg('err', 'Apps Script가 예전 버전입니다. 새 Code.gs로 교체한 뒤 [배포 관리]에서 새 버전으로 다시 배포하세요. (저장하지 않았습니다)'); return; }
       } catch (e) { setMsg('err', esc(e.message)); return; }
     }
     const res = await apiPost({ key: key, force: !!force, article: f });
@@ -1185,6 +1192,8 @@ input,textarea,select{max-width:100%}
       // 비밀번호가 바뀐 경우: 로그아웃하고 잠금 화면으로
       clearKey(); render();
       const lm = $('#lockMsg'); if (lm) lm.innerHTML = '<div class="msg err">비밀번호가 바뀌었습니다. 다시 입력하세요.</div>';
+    } else if (res.code === 'SAME_LEAD') {
+      setMsg('warn', esc(res.message)+' <a href="#/a/'+encodeURIComponent(res.existingId)+'">기존 기사 보기</a>');
     } else if (res.code === 'DUPLICATE') {
       setMsg('warn', esc(res.message) + ' <button type="button" data-act="force-submit">그래도 저장</button>');
     } else {
@@ -1268,7 +1277,7 @@ input,textarea,select{max-width:100%}
   }
   // 칸 비우기 (날짜·출처는 유지)
   function resetForm(keepMsg) {
-    ['f-titleEn', 'f-titleKo', 'f-url', 'f-oneLine', 'f-points', 'f-insights', 'f-bodyKo', 'f-bodyEn', 'f-author', 'f-updated', 'f-paste'].forEach(function (id) { setFv(id, ''); });
+    ['f-titleEn', 'f-titleKo', 'f-url', 'f-oneLine', 'f-points', 'f-insights', 'f-bodyKo', 'f-bodyEn', 'f-lead', 'f-author', 'f-updated', 'f-original-input', 'f-paste'].forEach(function (id) { setFv(id, ''); });
     setChips([]); setSeg('impact', '중립'); setSeg('importance', '보통');
     if (!keepMsg) setMsg('', '');
   }
@@ -1292,7 +1301,7 @@ input,textarea,select{max-width:100%}
     else if (act === 'tab') { state.tab = v; setPref('tab', v); render(); }
     else if (act === 'chip') { t.classList.toggle('on'); t.setAttribute('aria-pressed', String(t.classList.contains('on'))); }
     else if (act === 'seg') { setSeg(t.dataset.seg, v); }
-    else if (act === 'copy-prompt') { copyText(PROMPT).then(function (ok) { setMsg(ok ? 'ok' : 'err', ok ? '요청문을 복사했습니다. Claude 대화창에 붙여넣고, 맨 아래에 영어 원문을 넣어 보내세요.' : '복사하지 못했습니다. 브라우저 권한을 확인하세요.'); }); }
+    else if (act === 'copy-prompt') { copyText(fv('f-original-input').trim() ? PROMPT.replace('(여기에 영어 원문 붙여넣기)',()=>fv('f-original-input').trim()) : PROMPT).then(function (ok) { setMsg(ok ? 'ok' : 'err', ok ? (fv('f-original-input').trim() ? '원문을 포함한 요청문을 복사했습니다. 번역 대화창에 붙여넣고 결과를 가져오세요.' : '요청문을 복사했습니다. 번역 대화창에 원문과 함께 붙여넣으세요.') : '복사하지 못했습니다. 브라우저 권한을 확인하세요.'); }); }
     else if (act === 'fill-paste') { fillFromPaste(); }
     else if (act === 'submit') { submitForm(false); }
     else if (act === 'force-submit') { submitForm(true); }

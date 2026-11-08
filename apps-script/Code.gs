@@ -25,7 +25,7 @@ const HEAVY_START_COL = 13;
 // 시트 전체 열의 개수 (A~S열)
 const TOTAL_COLS = 19;
 // 화면과 맞추기 위한 백엔드 버전 (화면이 이 값을 확인해 예전 코드로 저장하는 사고를 막음)
-const API_VERSION = 4;
+const API_VERSION = 5;
 // 셀 하나에 안전하게 넣을 최대 글자 수 (구글시트 한도는 5만 자)
 const CELL_LIMIT = 45000;
 // 월 탭 맨 윗줄에 들어가는 머리글 (순서를 바꾸면 안 됨)
@@ -363,12 +363,14 @@ function registerArticle_(body) {
     // 탭이 있으면 가져오고 없으면 새로 만듦
     const sh = ss.getSheetByName(tabName) || createMonthSheet_(ss, tabName);
     // 기존 기사 목록 (중복 검사와 번호 계산용)
-    const records = newsRecords_(ss);
+    const lead = newsLead_(body.article.leadText || a.bodyEn, a.titleEn);
+    const records = newsRecords_(ss, a.date);
     const rows = records.filter(r => r.sh.getName() === tabName).map(r => ({...r.a,id:r.a.id.replace(/^trash:/,'')}));
     const auto = body.action === 'ingest';
-    const hit = records.find(r => sameNews_(r, a, auto && body.hash));
+    const hit = records.find(r => sameNews_(r, a, auto && body.hash) || sameLead_(r,a,lead));
     if (auto && (!a.url || !/^[a-f0-9]{64}$/.test(body.hash))) return fail_('원문 식별 정보 확인 필요','INVALID');
     if (hit && hit.removed) return fail_('삭제한 기사입니다.', 'DELETED');
+    if (hit && sameLead_(hit,a,lead)) return auto ? {ok:true,id:hit.a.id,state:"existing"} : fail_("같은 출처·발행일·첫 문장의 기사가 이미 있습니다.", "SAME_LEAD", {existingId:hit.a.id});
     if (auto && hit && (!hit.meta.hash || body.hash === hit.meta.hash)) return {ok:true,id:hit.a.id,state:'existing'};
     // 강제 저장이 아니면 중복 검사
     if (!auto && !body.force) {
@@ -402,8 +404,8 @@ function registerArticle_(body) {
     // 행이 모자라면 200행 추가
     if (rowNo > target.getMaxRows()) target.insertRowsAfter(target.getMaxRows(), 200);
     // 쓸 범위 (한 행, 16열)
-    if (auto && target.getMaxColumns()<20) target.insertColumnAfter(19);
-    const range = target.getRange(rowNo, 1, 1, auto ? 20 : TOTAL_COLS);
+    if ((auto || lead) && target.getMaxColumns()<20) target.insertColumnAfter(19);
+    const range = target.getRange(rowNo, 1, 1, (auto || lead) ? 20 : TOTAL_COLS);
     target.getRange(rowNo,10).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(IMPORTANCE_VALUES,true).setAllowInvalid(false).build());
     // 날짜나 수식으로 바뀌지 않도록 일반 텍스트 서식 적용
     range.setNumberFormat('@');
@@ -413,8 +415,9 @@ function registerArticle_(body) {
       if (hit) {
         values[3]=hit.a.tags.join(','); values[8]=hit.a.impact; values[9]=hit.a.importance; values[11]=hit.a.createdAt;
       }
-      values.push(JSON.stringify({hash:body.hash,aliases:Array.from(new Set([...(hit && hit.meta.aliases || []),articleKey_(a.url)]))}));
+      values.push(JSON.stringify({lead:lead,hash:body.hash,aliases:Array.from(new Set([...(hit && hit.meta.aliases || []),articleKey_(a.url)]))}));
     }
+    if (!auto && lead) values.push(JSON.stringify({lead:lead}));
     range.setValues([values.map(v => typeof v === 'string' && v.startsWith('=') ? "'"+v : v)]);
     // 행 높이가 늘어나지 않도록 잘라서 표시
     range.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
@@ -709,17 +712,44 @@ function articleKey_(url) {
   if (id) return (s.match(/spglobal\.com/i) ? 'platts:' : 'icis:') + id[1].toLowerCase();
   return s.replace(/([?&])(utm_[^=&]+|ref|tracking)=[^&#]*/gi, '$1').replace(/[?&]+$/, '').replace(/\/$/, '');
 }
-function newsRecords_(ss) {
+function publisher_(value) {
+  const s=String(value||'').trim().toLowerCase();
+  if (/platts|플래츠|플랫츠|s\s*&\s*p global/.test(s)) return 'platts';
+  if (/icis|아이시스/.test(s)) return 'icis';
+  return s === '기타 매체' ? '' : s;
+}
+function newsLead_(text,title) {
+  const lines=String(text||'').normalize('NFKC').replace(/\r/g,'').split('\n');
+  while(lines.length && (!lines[0].trim() || lines[0].trim()===String(title||'').trim() ||
+    /^(?:by\s+|(?:author|published|updated|source)\s*:|\d{4}-\d{2}-\d{2}(?:\s|$))/i.test(lines[0].trim()))) lines.shift();
+  const normalized=lines.join(' ').replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/\s+/g,' ').trim();
+  for (const m of normalized.matchAll(/[.!?]["')\]]*(?=\s|$)/g)) {
+    const prefix=normalized.slice(0,m.index+1);
+    if (/\b(?:U\.S|U\.K|e\.g|i\.e|Mr|Mrs|Dr|Inc|Ltd|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.$/i.test(prefix) && m.index+m[0].length<normalized.length) continue;
+    return normalized.slice(0,m.index+m[0].length).trim().toLowerCase();
+  }
+  return normalized.slice(0,4000).toLowerCase();
+}
+function sameLead_(r,a,lead) {
+  const publisher=publisher_(a.source);
+  return Boolean(lead && publisher && r.meta.lead===lead && r.a.date===a.date && publisher_(r.a.source)===publisher);
+}
+
+
+function newsRecords_(ss, date) {
   const list = [];
   monthSheets_(ss).forEach(function(sh) {
     if (sh.getLastRow() < 2) return;
     const n = sh.getLastRow()-1;
     const rows = sh.getRange(2, 1, n, LIGHT_COLS).getValues();
     const metadata = sh.getMaxColumns() >= 20 ? sh.getRange(2,20,n,1).getValues() : [];
+    const needLegacy = date && rows.some((row,i)=>normDate_(row[1])===date && !metadata[i]?.[0]);
+    const originals=needLegacy ? sh.getRange(2,15,n,2).getValues() : [];
     rows.forEach(function(row, i) {
       const article = rowToLight_(row);
       if (!article.id) return;
       const meta = JSON.parse(metadata[i] && metadata[i][0] || '{}');
+      if (!meta.lead && article.date===date && originals[i]) meta.lead=newsLead_(String(originals[i][0]||"")+String(originals[i][1]||""),article.titleEn);
       list.push({sh:sh, row:i+2, a:article, meta:meta, removed:article.id.startsWith('trash:')});
     });
   });
@@ -737,17 +767,22 @@ function newsAdmin_(b) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const records = newsRecords_(openSs_());
+    const records = newsRecords_(openSs_(),b.article?.date);
     if (b.action === 'trashList') return {ok:true,items:records.filter(r=>r.removed).map(r=>({id:r.a.id.slice(6),title:r.a.titleKo}))};
     if (b.action === 'lookup') {
-      const hit = records.find(r=>sameNews_(r,b.article,b.hash));
+      const lead=newsLead_(b.article.leadText,b.article.titleEn);
+      const hit = records.find(r=>sameNews_(r,b.article,b.hash) || sameLead_(r,b.article,lead));
       if (!hit) return {ok:true,state:'new'};
+      if (!hit.meta.lead && lead && hit.meta.hash===b.hash){
+        hit.meta.lead=lead;
+        hit.sh.getRange(hit.row,20).setValue(JSON.stringify(hit.meta));
+      }
       const alias = articleKey_(b.article.url);
       if (!hit.removed && hit.meta.hash === b.hash && alias && !(hit.meta.aliases||[]).includes(alias)) {
         hit.meta.aliases = (hit.meta.aliases||[]).concat(alias);
         hit.sh.getRange(hit.row,20).setValue(JSON.stringify(hit.meta));
       }
-      return {ok:true,id:hit.a.id,state:hit.removed?'deleted':!hit.meta.hash||hit.meta.hash===b.hash?'existing':'changed'};
+      return {ok:true,id:hit.a.id,state:hit.removed?'deleted':sameLead_(hit,b.article,lead)||!hit.meta.hash||hit.meta.hash===b.hash?'existing':'changed'};
     }
     const restore = b.action === 'restore';
     if (!/^\d{8}-\d{3,}$/.test(b.id)) return fail_('기사 번호 확인 필요','BAD_ID');
