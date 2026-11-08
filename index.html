@@ -333,6 +333,7 @@ input,textarea,select{max-width:100%}
         <input type="search" id="q" placeholder="전체 기간 검색 (두 글자 이상)" autocomplete="off">
       </label>
       <button type="button" class="btn-line" id="copyLinkBtn" data-act="copy-link">링크 복사</button>
+      <button type="button" class="btn-line" id="trashBtn" data-act="trash-list" hidden>휴지통</button>
       <button type="button" class="btn-line" id="logoutBtn" data-act="logout" hidden>로그아웃</button>
       <a class="btn-solid" href="#/write">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F3F0E8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -374,7 +375,7 @@ input,textarea,select{max-width:100%}
   // 브라우저 저장소(localStorage)에서 쓰는 이름 앞부분
   const STORE = 'newsapp:';
   // 품목 태그 목록
-  const TAGS = ['SM', 'AN', 'BD', 'MMA', 'BPA', '기타'];
+  const TAGS = ['SM', 'AN', 'BD', 'MMA', 'BPA', 'WTI', 'ABS', 'PC', 'PMMA', 'PS', 'HIPS', 'EPS', '기타'];
   // 가격영향 표시 정보 (색뿐 아니라 화살표 글자로도 구분)
   const IMPACT = {
     '상승': { label: '상승 요인', arrow: '▲', cls: 'up' },
@@ -382,7 +383,7 @@ input,textarea,select{max-width:100%}
     '중립': { label: '중립', arrow: '–', cls: 'flat' }
   };
   // 중요도 정렬 순서 (낮을수록 먼저)
-  const RANK = { '높음': 0, '보통': 1, '낮음': 2 };
+  const RANK = { '높음': 0, '중립': 1, '보통': 1, '낮음': 2 };
   // 지난 날짜 한 판을 브라우저에 보관하는 시간 (7일)
   const TTL_PAST = 7 * 24 * 3600 * 1000;
   // 오늘·최신 날짜 한 판을 '신선한 것'으로 보는 시간 (3분)
@@ -743,6 +744,7 @@ input,textarea,select{max-width:100%}
   // 8. 화면 그리기
   // =====================================================================
   function render() {
+    $('#trashBtn').hidden = DEMO || !getKey();
     $('#logoutBtn').hidden = DEMO || !getKey();
     $('#modeNote').textContent = DEMO ? '※ 샘플 모드: API_URL 을 설정하면 구글시트 데이터가 표시됩니다' : '';
     renderDateBar(); renderNav();
@@ -909,8 +911,8 @@ input,textarea,select{max-width:100%}
       };
       adm = '<details class="adv" id="adm" style="margin-top:28px"><summary>분류 수정 (관리자)</summary><div id="editMsg"></div>' +
         '<div class="fld"><div class="lab">품목 태그</div><div class="chips">' + chips + '</div></div>' +
-        '<div class="grid"><div class="fld"><div class="lab">가격 영향</div>' + sg('impact', ['상승', '하락', '중립'], a.impact) + '</div><div class="fld"><div class="lab">중요도</div>' + sg('importance', ['높음', '보통', '낮음'], a.importance) + '</div></div>' +
-        '<button type="button" class="btn-solid" data-act="save-class">변경 저장</button></details>';
+        '<div class="grid"><div class="fld"><div class="lab">가격 영향</div>' + sg('impact', ['상승', '하락', '중립'], a.impact) + '</div><div class="fld"><div class="lab">중요도</div>' + sg('importance', ['높음', '중립', '보통', '낮음'], a.importance) + '</div></div>' +
+        '<button type="button" class="btn-solid" data-act="save-class">변경 저장</button> <button type="button" class="btn-line" data-act="delete-news">기사 삭제</button></details>';
     }
     const origin = a.url ? '<a class="btn-solid" href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer">원문 확인하기 ↗</a>' : '<span>원문 링크가 등록되지 않았습니다</span>';
     const rail = '<aside class="rail" aria-label="다른 기사"><div class="label" style="padding-bottom:8px;border-bottom:1px solid var(--ink)">' + (others.length ? dots(a.date) + ' 다른 기사' : '다른 기사') + '</div>' +
@@ -965,7 +967,7 @@ input,textarea,select{max-width:100%}
       text('f-titleKo', '한글 제목 (필수)') + text('f-url', '원문 URL (선택)', 'url') +
       '<div class="fld"><div class="lab">품목 태그 (자동 추정, 여러 개 선택 가능, 비우면 기타)</div><div class="chips">' + tagChips + '</div></div>' +
       '<div class="grid"><div class="fld"><div class="lab">가격 영향</div>' + seg('impact', ['상승', '하락', '중립'], '중립') + '</div>' +
-      '<div class="fld"><div class="lab">중요도</div>' + seg('importance', ['높음', '보통', '낮음'], '보통') + '</div></div>' +
+      '<div class="fld"><div class="lab">중요도</div>' + seg('importance', ['높음', '중립', '보통', '낮음'], '보통') + '</div></div>' +
       '<details class="adv"><summary>자동 인식한 내용 보기·수정 (선택)</summary>' +
       area('f-oneLine', '한 줄 요약 (1면 제목 아래 문장)', 76, '첫 번째 핵심 요약의 설명으로 자동 채워집니다.') +
       area('f-points', '핵심 요약', 150, '한 줄에 하나씩, 제목과 본문은 || 로 구분합니다. (예: 제목||본문)') +
@@ -1205,6 +1207,36 @@ input,textarea,select{max-width:100%}
     else msg('err', esc(res.message || '확인하지 못했습니다.'));
   }
   // 기사 화면에서 중요도·가격영향·품목 태그 수정
+  async function manageNews(act) {
+    const post = async (action,id) => {
+      const res=await apiPost({action,id,key:getKey()});
+      if (!res.ok) throw Error(res.message);
+      return res;
+    };
+    const ping=await apiGet({action:'ping'});
+    if (!(ping.version>=4)) throw Error('뉴스 서버에 새 버전 배포가 필요합니다.');
+    function refreshNews(id,date) {
+      cacheDel('ar:'+id); cacheDel('ed:'+date); cacheDel('dates');
+      state.datesReady=false; state.editionDate=null; state.article=null;
+      if (location.hash==='#/') route(); else location.hash='#/';
+    }
+    if (act==='delete-news') {
+      const article=state.article;
+      if (!article || !confirm('이 기사를 휴지통으로 옮길까요? 다음 출근 때도 다시 등록되지 않습니다.')) return;
+      await post('delete',article.id); refreshNews(article.id,article.date); return;
+    }
+    const list=await post('trashList');
+    const dialog=document.createElement('dialog');
+    const heading=document.createElement('h2'); heading.textContent='기사 휴지통'; dialog.append(heading);
+    if (!list.items.length) dialog.append('삭제한 기사가 없습니다.');
+    for (const item of list.items) {
+      const row=document.createElement('p');row.textContent=item.title+' ';
+      const restore=document.createElement('button');restore.textContent='복원'; row.append(restore);dialog.append(row);
+      restore.onclick=async()=>{restore.disabled=true;try{const res=await post('restore',item.id);dialog.close();refreshNews(item.id,res.date);}catch(e){restore.disabled=false;alert(e.message);}};
+    }
+    const close=document.createElement('button');close.textContent='닫기';close.onclick=()=>dialog.close();dialog.append(close);
+    dialog.onclose=()=>dialog.remove();document.body.append(dialog);dialog.showModal();
+  }
   async function saveClass() {
     const a = state.article; if (!a) return;
     const tags = Array.prototype.map.call(document.querySelectorAll('#adm [data-chip].on'), function (b) { return b.dataset.chip; });
@@ -1267,6 +1299,7 @@ input,textarea,select{max-width:100%}
     else if (act === 'reset-form') { resetForm(false); }
     else if (act === 'unlock') { unlock(); }
     else if (act === 'logout') { clearKey(); render(); }
+    else if (act === 'delete-news' || act === 'trash-list') manageNews(act).catch(e=>alert(e.message));
     else if (act === 'save-class') { saveClass(); }
   });
   // 날짜 선택칸

@@ -25,7 +25,7 @@ const HEAVY_START_COL = 13;
 // 시트 전체 열의 개수 (A~S열)
 const TOTAL_COLS = 19;
 // 화면과 맞추기 위한 백엔드 버전 (화면이 이 값을 확인해 예전 코드로 저장하는 사고를 막음)
-const API_VERSION = 3;
+const API_VERSION = 4;
 // 셀 하나에 안전하게 넣을 최대 글자 수 (구글시트 한도는 5만 자)
 const CELL_LIMIT = 45000;
 // 월 탭 맨 윗줄에 들어가는 머리글 (순서를 바꾸면 안 됨)
@@ -35,9 +35,9 @@ const COL_WIDTHS = [110, 90, 80, 80, 260, 260, 320, 320, 70, 70, 180, 140, 200, 
 // 가격영향 입력 허용 값
 const IMPACT_VALUES = ['상승', '하락', '중립'];
 // 중요도 입력 허용 값
-const IMPORTANCE_VALUES = ['높음', '보통', '낮음'];
+const IMPORTANCE_VALUES = ['높음', '중립', '보통', '낮음'];
 // 품목 태그 허용 값
-const TAG_VALUES = ['SM', 'AN', 'BD', 'MMA', 'BPA', '기타'];
+const TAG_VALUES = ['SM', 'AN', 'BD', 'MMA', 'BPA', 'WTI', 'ABS', 'PC', 'PMMA', 'PS', 'HIPS', 'EPS', '기타'];
 // 지난 날짜 한 판을 캐시에 보관하는 시간(초) - 6시간(캐시 최대치)
 const TTL_PAST = 21600;
 // 오늘·최신 날짜 한 판을 캐시에 보관하는 시간(초) - 10분
@@ -91,6 +91,7 @@ function doPost(e) {
     // 요청 종류: auth(비밀번호 확인), update(분류 수정), 그 외는 기사 등록
     const action = body.action || 'register';
     if (action === 'auth') return output_(checkKey_(body.key) || { ok: true, message: '확인되었습니다.' }, e);
+    if (['lookup','trashList','delete','restore'].includes(action)) return output_(newsAdmin_(body), e);
     if (action === 'update') return output_(updateArticle_(body), e);
     // 기사 등록 처리 후 결과 반환
     return output_(registerArticle_(body), e);
@@ -157,9 +158,10 @@ function getDates_() {
     // 머리글뿐이면 건너뜀
     if (last < 2) return;
     // 날짜 열 전체를 한 번에 읽어 건수 집계
-    sh.getRange(2, 2, last - 1, 1).getValues().forEach(function (r) {
+    sh.getRange(2, 1, last - 1, 2).getValues().forEach(function (r) {
       // 날짜를 YYYY-MM-DD 문자열로 통일
-      const d = normDate_(r[0]);
+      if (String(r[0]).startsWith('trash:')) return;
+      const d = normDate_(r[1]);
       // 올바른 날짜만 집계
       if (d) counts[d] = (counts[d] || 0) + 1;
     });
@@ -297,7 +299,7 @@ function updateArticle_(body) {
     upd.impact = body.impact;
   }
   if (body.importance != null) {
-    if (IMPORTANCE_VALUES.indexOf(body.importance) < 0) return fail_('중요도는 높음, 보통, 낮음 중에서 고르세요.', 'INVALID');
+    if (IMPORTANCE_VALUES.indexOf(body.importance) < 0) return fail_('중요도는 높음, 중립, 보통, 낮음 중에서 고르세요.', 'INVALID');
     upd.importance = body.importance;
   }
   if (body.tags != null) upd.tags = normTags_(body.tags);
@@ -361,9 +363,15 @@ function registerArticle_(body) {
     // 탭이 있으면 가져오고 없으면 새로 만듦
     const sh = ss.getSheetByName(tabName) || createMonthSheet_(ss, tabName);
     // 기존 기사 목록 (중복 검사와 번호 계산용)
-    const rows = readLightRows_(sh);
+    const records = newsRecords_(ss);
+    const rows = records.filter(r => r.sh.getName() === tabName).map(r => ({...r.a,id:r.a.id.replace(/^trash:/,'')}));
+    const auto = body.action === 'ingest';
+    const hit = records.find(r => sameNews_(r, a, auto && body.hash));
+    if (auto && (!a.url || !/^[a-f0-9]{64}$/.test(body.hash))) return fail_('원문 식별 정보 확인 필요','INVALID');
+    if (hit && hit.removed) return fail_('삭제한 기사입니다.', 'DELETED');
+    if (auto && hit && (!hit.meta.hash || body.hash === hit.meta.hash)) return {ok:true,id:hit.a.id,state:'existing'};
     // 강제 저장이 아니면 중복 검사
-    if (!body.force) {
+    if (!auto && !body.force) {
       // 같은 URL이거나, 같은 날 같은 제목이면 중복으로 판단
       const dup = rows.find(function (r) {
         return (a.url && r.url === a.url) || (r.date === a.date && (r.titleKo === a.titleKo || (a.titleEn && r.titleEn.toLowerCase() === a.titleEn.toLowerCase())));
@@ -380,7 +388,7 @@ function registerArticle_(body) {
       if (r.id.indexOf(prefix) === 0) maxSeq = Math.max(maxSeq, parseInt(r.id.slice(prefix.length), 10) || 0);
     });
     // 새 id = 날짜 + 3자리 일련번호
-    const id = prefix + ('00' + (maxSeq + 1)).slice(-3);
+    const id = auto && hit ? hit.a.id : prefix + String(maxSeq + 1).padStart(3,'0');
     // 긴 본문은 두 칸으로 나눔
     const ko = splitChunks_(a.bodyKo);
     const en = splitChunks_(a.bodyEn);
@@ -389,15 +397,25 @@ function registerArticle_(body) {
     // 등록 시각 문자열
     const nowStr = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm');
     // 새로 쓸 행 번호
-    const rowNo = sh.getLastRow() + 1;
+    const target = auto && hit ? hit.sh : sh;
+    const rowNo = auto && hit ? hit.row : target.getLastRow() + 1;
     // 행이 모자라면 200행 추가
-    if (rowNo > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), 200);
+    if (rowNo > target.getMaxRows()) target.insertRowsAfter(target.getMaxRows(), 200);
     // 쓸 범위 (한 행, 16열)
-    const range = sh.getRange(rowNo, 1, 1, TOTAL_COLS);
+    if (auto && target.getMaxColumns()<20) target.insertColumnAfter(19);
+    const range = target.getRange(rowNo, 1, 1, auto ? 20 : TOTAL_COLS);
+    target.getRange(rowNo,10).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(IMPORTANCE_VALUES,true).setAllowInvalid(false).build());
     // 날짜나 수식으로 바뀌지 않도록 일반 텍스트 서식 적용
     range.setNumberFormat('@');
     // 값 채우기 (머리글 순서와 동일)
-    range.setValues([[id, a.date, a.source, a.tags.join(','), a.titleKo, a.titleEn, a.oneLine, joinPairs_(a.points), a.impact, a.importance, a.url, nowStr, ko[0], ko[1], en[0], en[1], joinPairs_(a.insights), a.author, a.updatedAt]]);
+    const values = [id, hit && auto ? hit.a.date : a.date, a.source, a.tags.join(','), a.titleKo, a.titleEn, a.oneLine, joinPairs_(a.points), a.impact, a.importance, a.url, nowStr, ko[0], ko[1], en[0], en[1], joinPairs_(a.insights), a.author, a.updatedAt];
+    if (auto) {
+      if (hit) {
+        values[3]=hit.a.tags.join(','); values[8]=hit.a.impact; values[9]=hit.a.importance; values[11]=hit.a.createdAt;
+      }
+      values.push(JSON.stringify({hash:body.hash,aliases:Array.from(new Set([...(hit && hit.meta.aliases || []),articleKey_(a.url)]))}));
+    }
+    range.setValues([values.map(v => typeof v === 'string' && v.startsWith('=') ? "'"+v : v)]);
     // 행 높이가 늘어나지 않도록 잘라서 표시
     range.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
     // 위쪽 정렬
@@ -439,7 +457,7 @@ function normalizeInput_(b) {
   if (IMPACT_VALUES.indexOf(impact) < 0) return { error: '가격영향은 상승, 하락, 중립 중에서 고르세요.' };
   // 중요도 값 검사
   const importance = String(b.importance || '').trim();
-  if (IMPORTANCE_VALUES.indexOf(importance) < 0) return { error: '중요도는 높음, 보통, 낮음 중에서 고르세요.' };
+  if (IMPORTANCE_VALUES.indexOf(importance) < 0) return { error: '중요도는 높음, 중립, 보통, 낮음 중에서 고르세요.' };
   // 품목 태그: 허용 값만 남기고, 없으면 기타
   const uniqTags = normTags_(b.tags);
   // 원문 URL (선택, 있으면 http로 시작해야 함)
@@ -496,7 +514,7 @@ function readLightRows_(sh) {
   // 데이터가 없으면 빈 목록
   if (last < 2) return [];
   // 가벼운 열만 한 번에 읽어서 변환하고, id가 빈 행은 제외
-  return sh.getRange(2, 1, last - 1, LIGHT_COLS).getValues().map(rowToLight_).filter(function (a) { return a.id; });
+  return sh.getRange(2, 1, last - 1, LIGHT_COLS).getValues().map(rowToLight_).filter(function (a) { return a.id && !a.id.startsWith("trash:"); });
 }
 
 // 시트 한 행을 기사 객체로 변환
@@ -683,4 +701,61 @@ function checkSetup() {
   console.log('월 탭: ' + tabs.join(', '));
   console.log('날짜 목록: ' + JSON.stringify(getDates_().dates));
   console.log('등록 키 설정: ' + (hasKey ? '완료' : '아직 없음 (프로젝트 설정 > 스크립트 속성에 REGISTER_KEY 추가)'));
+}
+// T stores ingestion fingerprints. Deleted records retain their original row and ID.
+function articleKey_(url) {
+  const s = String(url || '').trim();
+  const id = s.match(/[?&]articleID=([\w-]+)/i) || s.match(/news-article-([\w-]+)/i);
+  if (id) return (s.match(/spglobal\.com/i) ? 'platts:' : 'icis:') + id[1].toLowerCase();
+  return s.replace(/([?&])(utm_[^=&]+|ref|tracking)=[^&#]*/gi, '$1').replace(/[?&]+$/, '').replace(/\/$/, '');
+}
+function newsRecords_(ss) {
+  const list = [];
+  monthSheets_(ss).forEach(function(sh) {
+    if (sh.getLastRow() < 2) return;
+    const n = sh.getLastRow()-1;
+    const rows = sh.getRange(2, 1, n, LIGHT_COLS).getValues();
+    const metadata = sh.getMaxColumns() >= 20 ? sh.getRange(2,20,n,1).getValues() : [];
+    rows.forEach(function(row, i) {
+      const article = rowToLight_(row);
+      if (!article.id) return;
+      const meta = JSON.parse(metadata[i] && metadata[i][0] || '{}');
+      list.push({sh:sh, row:i+2, a:article, meta:meta, removed:article.id.startsWith('trash:')});
+    });
+  });
+  return list;
+}
+function sameNews_(r, a, hash) {
+  const key = articleKey_(a.url);
+  return (key && (articleKey_(r.a.url) === key || (r.meta.aliases || []).indexOf(key)>=0)) ||
+    (hash && r.meta.hash === hash) ||
+    (r.a.date === a.date && r.a.titleEn && a.titleEn && r.a.titleEn.toLowerCase().trim() === a.titleEn.toLowerCase().trim() && r.a.source.split(' ')[0] === a.source.split(' ')[0]);
+}
+function newsAdmin_(b) {
+  const invalid = checkKey_(b.key);
+  if (invalid) return invalid;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const records = newsRecords_(openSs_());
+    if (b.action === 'trashList') return {ok:true,items:records.filter(r=>r.removed).map(r=>({id:r.a.id.slice(6),title:r.a.titleKo}))};
+    if (b.action === 'lookup') {
+      const hit = records.find(r=>sameNews_(r,b.article,b.hash));
+      if (!hit) return {ok:true,state:'new'};
+      const alias = articleKey_(b.article.url);
+      if (!hit.removed && hit.meta.hash === b.hash && alias && !(hit.meta.aliases||[]).includes(alias)) {
+        hit.meta.aliases = (hit.meta.aliases||[]).concat(alias);
+        hit.sh.getRange(hit.row,20).setValue(JSON.stringify(hit.meta));
+      }
+      return {ok:true,id:hit.a.id,state:hit.removed?'deleted':!hit.meta.hash||hit.meta.hash===b.hash?'existing':'changed'};
+    }
+    const restore = b.action === 'restore';
+    if (!/^\d{8}-\d{3,}$/.test(b.id)) return fail_('기사 번호 확인 필요','BAD_ID');
+    const hit = records.find(r=>r.a.id === (restore?'trash:':'')+b.id);
+    if (!hit) return fail_('기사를 찾을 수 없습니다.','NOT_FOUND');
+    hit.sh.getRange(hit.row,1).setValue((restore?'':'trash:')+b.id);
+    SpreadsheetApp.flush();
+    bumpCacheVer_();
+    return {ok:true,id:b.id,date:hit.a.date};
+  } finally { lock.releaseLock(); }
 }
